@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dawn-patrol",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["scripts/dev-server.py", "8643"],
+      "port": 8643
+    }
+  ]
+}
