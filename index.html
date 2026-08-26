@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAWN PATROL - the ocean is real</title>
+  <meta name="description" content="A retro surf game where the waves are synthesized live from NOAA buoy spectral data. Pick a real California break and surf what the ocean is actually doing right now.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%231A1F3C'/><path d='M0 10 Q4 6 8 10 T16 10 V16 H0 Z' fill='%234F7CAC'/><rect x='2' y='3' width='12' height='2' fill='%23F2B880'/></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="stage">
+    <div id="screen">
+      <canvas id="game" width="480" height="270" aria-label="Dawn Patrol surf game"></canvas>
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <div id="start" class="overlay">
+        <header class="logo">
+          <h1>DAWN<span> </span>PATROL</h1>
+          <p class="tag">THE OCEAN IS REAL</p>
+        </header>
+        <p class="blurb">
+          Every wave below is synthesized from the live directional wave spectrum of a
+          real NOAA buoy. Flat day at the buoy, flat day in the game.
+        </p>
+        <div id="breaks" role="radiogroup" aria-label="Pick a break"></div>
+        <div class="row">
+          <button id="paddleOut" class="cta" disabled>PADDLE OUT</button>
+        </div>
+        <details class="help">
+          <summary>HOW TO SURF</summary>
+          <ul>
+            <li><b>&larr; &rarr;</b> paddle around the lineup</li>
+            <li><b>SPACE</b> catch the wave when the marker says PADDLE!</li>
+            <li><b>&uarr; &darr;</b> alternate to pump for speed</li>
+            <li><b>X</b> snap off the lip (needs speed, near the pocket)</li>
+            <li><b>C</b> cutback when you are out on the shoulder</li>
+            <li><b>F</b> floater over a breaking section</li>
+            <li><b>SPACE</b> kick out clean to end the ride</li>
+            <li>Stay ahead of the whitewater. Stall in the pocket for the barrel.</li>
+          </ul>
+        </details>
+        <details class="help">
+          <summary>AI BOOTH (OPTIONAL)</summary>
+          <p>Paste your own Anthropic API key and the broadcast booth commentary is
+             written live by Claude, anchored to the deterministic judge score. The key
+             stays in your browser's localStorage and is sent only to api.anthropic.com.</p>
+          <div class="row">
+            <input id="boothKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+            <button id="boothSave">SAVE</button>
+          </div>
+          <p id="boothStatus" class="dim"></p>
+        </details>
+        <footer>
+          <p class="dim">DATA: NOAA NDBC REALTIME2 SPECTRAL FILES, REFRESHED EVERY 30 MIN BY A GITHUB ACTION.</p>
+          <p class="dim"><a href="https://github.com/caromada/Dawn-Patrol">SOURCE ON GITHUB</a> · NO FRAMEWORKS · NO IMAGE OR AUDIO FILES</p>
+        </footer>
+      </div>
+
+      <div id="touch" aria-hidden="true">
+        <div class="tside">
+          <button data-k="left">&larr;</button>
+          <button data-k="right">&rarr;</button>
+          <button data-k="up">PUMP</button>
+          <button data-k="down">PUMP</button>
+        </div>
+        <div class="tside">
+          <button data-k="snap">SNAP</button>
+          <button data-k="cut">CUT</button>
+          <button data-k="float">FLOAT</button>
+          <button data-k="action" class="go">GO</button>
+        </div>
+      </div>
+
+      <button id="mute" title="Toggle sound" aria-label="Toggle sound">SND</button>
+      <button id="backBtn" title="Back to break select" aria-label="Back to break select">MENU</button>
+    </div>
+  </main>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
