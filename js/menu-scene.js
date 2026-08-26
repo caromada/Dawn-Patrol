@@ -152,6 +152,7 @@ export function startMenuScene(canvas) {
     if (reducedMotion()) return; // one still frame is plenty
     rafId = requestAnimationFrame(loop);
   };
+  window.__menuStep = (tt) => drawScene(g, tt); // deterministic render, used by tests
   loop();
 }
 
