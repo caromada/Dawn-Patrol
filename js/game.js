@@ -17,7 +17,7 @@ const PPM = 2.4;                 // pixels per meter, horizontal
 const EPM = 24;                  // pixels per meter, elevation (readability boost)
 const DT = 1 / 60;
 
-const SPRITE_COLORS = { body: P.silhouette, board: P.silhouette };
+const SPRITE_COLORS = { body: P.silhouette, board: P.board };
 
 // 4x4 Bayer matrix for ordered dithering (values 0..15)
 const BAYER = [
@@ -60,14 +60,6 @@ export class Game {
     this.best = Number(localStorage.getItem("dp_best_" + station.id) || 0);
     this.keys = {};
     this.lastPump = { dir: 0, t: 0 };
-    this.stars = [];
-    { // deterministic starfield
-      let s = 12345;
-      for (let i = 0; i < 40; i++) {
-        s = (s * 16807) % 2147483647;
-        this.stars.push({ x: s % W, y: (s >> 3) % (HORIZON - 25), tw: (s >> 7) % 100 });
-      }
-    }
     this._bound = { down: (e) => this.onKey(e, true), up: (e) => this.onKey(e, false) };
   }
 
@@ -115,6 +107,7 @@ export class Game {
       else if (k === "action") this.endRide("kickout");
     } else if (this.state === "scored" && k === "action" && this.scoredAt + 900 < performance.now()) {
       this.state = "lineup";
+      this.rideView = false;
       this.px = this.xBreak - 16;
       this.scorePanel = null;
     }
@@ -200,7 +193,7 @@ export class Game {
     if (inc && this.px - inc.x < 26 && !this.setPinged) {
       this.setPinged = true;
       sfx.setBell();
-      this.flash("OUTSIDE!", P.peach, 1);
+      this.flash("OUTSIDE!", P.accent, 1);
     }
     if (!inc) this.setPinged = false;
 
@@ -229,9 +222,18 @@ export class Game {
 
   beginRide(crest, quality) {
     this.state = "riding";
+    this.rideView = true;
     this.rideT = 0;
     this.waveX = crest.x;
-    this.pos = 3;                       // meters ahead of the crest
+    this.pos = 5;                       // meters down the line, ahead of the curl
+    this.faceY = 0.05;                  // 0 = at the lip, 1 = bottom of the wave
+    this.dropT = 0.8;                   // the committed drop off the peak
+    this.carveZone = 0;
+    this.snapCd = 0; this.cutCd = 0; this.floatCd = 0;
+    this.spray = [];
+    this.sprayPending = 0;
+    // goes left at Blacks, right elsewhere, or steer it with the arrows held at takeoff
+    this.rideLeft = this.keys.left ? true : this.keys.right ? false : this.st.id === "46225";
     this.v = this.field.crestSpeed(crest.x);
     this.stallT = 0;
     this.spriteState = "popup";
@@ -279,45 +281,51 @@ export class Game {
     if (this.snapCd > this.rideT) return;
     this.snapCd = this.rideT + 0.9;
     const c = this.field.crestSpeed(this.waveX);
-    if (this.pos > 12) { this.flash("TOO FAR OUT ON THE SHOULDER", P.foam, 1); return; }
-    const q = Math.max(0.1, Math.min(1, (this.v / (1.4 * c)) * (1 - this.pos / 16)));
+    if (this.pos > 14) { this.flash("TOO FAR OUT ON THE SHOULDER", P.foam, 1); return; }
+    if (this.faceY > 0.55) { this.flash("GET UP THE FACE FIRST", P.foam, 1); return; }
+    const q = Math.max(0.1, Math.min(1, (this.v / (1.4 * c)) * (1 - this.faceY)));
     this.trace.maneuvers.push({ type: "snap", quality: Math.round(q * 100) / 100 });
-    this.v *= 0.72;
+    this.v *= 0.75;
+    this.faceY = Math.min(1, this.faceY + 0.3);
+    this.sprayPending += 16;
     this.spriteState = "snap"; this.spriteUntil = this.rideT + 0.4;
     sfx.snap();
     this.burst(this.px, this.eta(this.px) + 0.8, this.rm ? 0 : 14, P.foam);
-    this.flash(q > 0.65 ? "BIG SNAP!" : "SNAP", P.peach, q > 0.65 ? 2 : 1);
+    this.flash(q > 0.65 ? "BIG SNAP!" : "SNAP", P.accent, q > 0.65 ? 2 : 1);
     if (this.v < 0.8 * c && q < 0.3) this.startWipeout("dug a rail");
   }
 
   doCutback() {
     if (this.cutCd > this.rideT) return;
     this.cutCd = this.rideT + 1.2;
-    if (this.pos < 5) { this.flash("ALREADY IN THE POCKET", P.foam, 1); return; }
+    if (this.pos < 4) { this.flash("ALREADY IN THE POCKET", P.foam, 1); return; }
     const q = Math.min(1, this.pos / 14 + this.v / (2.5 * this.field.crestSpeed(this.waveX)));
     this.trace.maneuvers.push({ type: "cutback", quality: Math.round(q * 100) / 100 });
     this.pos = Math.max(2, this.pos - 8);
     this.v *= 0.86;
+    this.faceY = Math.min(1, this.faceY + 0.2);
+    this.sprayPending += 10;
     this.spriteState = "cutback"; this.spriteUntil = this.rideT + 0.5;
     sfx.cutback();
-    this.flash("CUTBACK", P.peach, 1);
+    this.flash("CUTBACK", P.accent, 1);
   }
 
   doFloater() {
     const cr = this.trackedCrest();
-    if (!cr?.breaking && !this.fronts.some((f) => Math.abs(f.x - (this.waveX + this.pos)) < 7)) {
-      this.flash("NO SECTION", P.foam, 1); return;
-    }
+    if (!cr?.breaking && !this.sectionWarned) { this.flash("NO SECTION", P.foam, 1); return; }
+    if (this.faceY > 0.45) { this.flash("CLIMB TO THE LIP", P.foam, 1); return; }
     if (this.floatCd > this.rideT) return;
     this.floatCd = this.rideT + 1.5;
     const q = Math.min(1, this.v / (1.4 * this.field.crestSpeed(this.waveX)));
     this.trace.maneuvers.push({ type: "floater", quality: Math.round(q * 100) / 100 });
     this.trace.sectionsMade += 1;
     this.pos += 5;
+    this.faceY = 0.15;
+    this.sprayPending += 8;
     this.engulfT = 0;
     this.spriteState = "floater"; this.spriteUntil = this.rideT + 0.6;
     sfx.floater();
-    this.flash("FLOATER", P.peach, 1);
+    this.flash("FLOATER", P.accent, 1);
   }
 
   updateRiding(dt) {
@@ -335,6 +343,33 @@ export class Game {
     }
     if (this.lostT > 1.6 || (this.lostT === 0 && cr.H < 0.2 && this.rideT > 2)) { this.endRide("flats"); return; }
     const c = this.field.crestSpeed(this.waveX);
+    this.curH = cr.H; this.curRatio = cr.H / cr.depth; this.curBreaking = cr.breaking;
+
+    // riding the face: up toward the lip bleeds speed, down the face builds it
+    if (this.dropT > 0) {
+      this.dropT -= dt;
+      this.faceY = Math.min(0.8, this.faceY + 1.7 * dt);
+      this.v += 1.7 * dt;
+      this.sprayPending += 1;
+    } else if (this.keys.up) {
+      this.faceY = Math.max(0, this.faceY - 2.0 * dt);
+      this.v -= 1.0 * dt;
+    } else if (this.keys.down) {
+      this.faceY = Math.min(1, this.faceY + 2.0 * dt);
+      this.v += (1.5 + this.curRatio) * dt;
+    } else {
+      this.faceY += (0.55 - this.faceY) * 1.1 * dt;
+    }
+    // a full rail-to-rail carve is the real pump
+    const zone = this.faceY < 0.38 ? -1 : this.faceY > 0.62 ? 1 : 0;
+    if (zone !== 0 && zone !== this.carveZone) {
+      if (this.carveZone !== 0) {
+        this.v = Math.min(this.v + 0.7, 1.9 * c);
+        sfx.pump();
+        this.sprayPending += 4;
+      }
+      this.carveZone = zone;
+    }
 
     // speed relaxes toward trim speed; position on the face follows.
     this.v += (0.9 * c - this.v) * 0.5 * dt;
@@ -355,7 +390,7 @@ export class Game {
     if (ratio > 0.7 && !cr.breaking && !this.sectionWarned) {
       this.sectionWarned = true;
       sfx.section();
-      this.flash("SECTION AHEAD!", P.peach, 2);
+      this.flash("SECTION AHEAD!", P.accent, 2);
     }
     if (cr.breaking) this.sectionWarned = false;
 
@@ -369,6 +404,11 @@ export class Game {
       }
     } else this.engulfT = Math.max(0, this.engulfT - dt);
 
+    // caught too high when the lip throws: over the falls
+    if (cr.breaking && this.faceY < 0.15 && this.pos < 2.5 && this.dropT <= 0) {
+      this.startWipeout("went over with the lip");
+      return;
+    }
     if (this.pos > 26) { this.endRide("flats"); return; }       // outran it
     if (this.pos < -2) {
       // behind the crest: pitched if it is breaking, faded off the back if not
@@ -398,6 +438,10 @@ export class Game {
   updateWipeout(dt) {
     this.wipeT += dt;
     this.px += 3 * dt;
+    if (this.faceY != null) {
+      this.faceY = Math.min(1, this.faceY + 2 * dt);
+      this.pos = Math.max(0, this.pos - 3 * dt);
+    }
     if (this.wipeT > 1.3) this.judge();
   }
 
@@ -458,36 +502,63 @@ export class Game {
 
   render() {
     const g = this.ctx;
+    this.renderSky(g);
+    if (this.rideView) this.renderWaveWall(g);
+    else this.renderSideView(g);
+    // barrel vignette
+    if (this.barreled && this.state === "riding") {
+      g.fillStyle = P.silhouette;
+      g.globalAlpha = 0.35;
+      g.fillRect(0, 0, W, 26); g.fillRect(0, H - 26, W, 26);
+      g.globalAlpha = 1;
+      drawTextCentered(g, "BARREL " + this.trace.barrelTime.toFixed(1) + "S", W / 2, 32, P.accent, 1);
+    }
+
+    this.renderHud(g);
+  }
+
+  renderSky(g) {
     const frame = Math.floor(this.t * 10);
-    const sunX = Math.floor(W * 0.68);
-    // sky bands
-    g.fillStyle = P.skyDeep; g.fillRect(0, 0, W, 42);
-    g.fillStyle = P.skyIndigo; g.fillRect(0, 42, W, HORIZON - 42);
-    // first light: Bayer-dithered peach glow pooling around the rising sun
-    g.fillStyle = P.peach;
-    for (let y = HORIZON - 24; y < HORIZON; y++) {
-      const p = (y - (HORIZON - 24)) / 24;
+    this._frame = frame;
+    const sunX = Math.floor(W * 0.62);
+    this._sunX = sunX;
+    // tropical midday sky
+    g.fillStyle = P.skyDeep; g.fillRect(0, 0, W, 34);
+    g.fillStyle = P.sky; g.fillRect(0, 34, W, HORIZON - 34);
+    // pale haze pooling at the horizon (Bayer blend)
+    g.fillStyle = P.haze;
+    for (let y = HORIZON - 16; y < HORIZON; y++) {
+      const p = (y - (HORIZON - 16)) / 16;
       for (let x = 0; x < W; x++) {
-        const glow = Math.max(0, 6 - Math.abs(x - sunX) / 12);
-        if (BAYER[y & 3][x & 3] < p * 6 + glow) g.fillRect(x, y, 1, 1);
+        if (BAYER[y & 3][x & 3] < p * 14) g.fillRect(x, y, 1, 1);
       }
     }
-    // the sun itself, half risen
-    const sunR = 11;
-    for (let dy = -sunR; dy <= 0; dy++) {
-      const half = Math.floor(Math.sqrt(sunR * sunR - dy * dy));
-      g.fillRect(sunX - half, HORIZON - 1 + dy, half * 2, 1);
-    }
     g.fillRect(0, HORIZON - 1, W, 1);
-    // stars fade with the dawn
-    g.fillStyle = P.foam;
-    for (const s of this.stars) {
-      if ((s.tw + Math.floor(performance.now() / 700)) % 7 === 0) continue;
-      g.globalAlpha = 0.5;
-      g.fillRect(s.x, s.y, 1, 1);
+    // the sun, high and blazing: gold ring, hot core
+    const sunY = 34, sunR = 10;
+    for (let dy = -sunR - 3; dy <= sunR + 3; dy++) {
+      for (let dx = -sunR - 3; dx <= sunR + 3; dx++) {
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= 36) { g.fillStyle = P.foam; g.fillRect(sunX + dx, sunY + dy, 1, 1); }
+        else if (d2 <= sunR * sunR) { g.fillStyle = P.accent; g.fillRect(sunX + dx, sunY + dy, 1, 1); }
+        else if (d2 <= (sunR + 3) * (sunR + 3) && BAYER[dy & 3][dx & 3] < 6) {
+          g.fillStyle = P.accent; g.fillRect(sunX + dx, sunY + dy, 1, 1);
+        }
+      }
     }
-    g.globalAlpha = 1;
-    // pelicans working the lineup at first light
+    // trade-wind clouds drifting through
+    g.fillStyle = P.foam;
+    const CLOUDS = [[70, 46, 1.6], [240, 30, 1.1], [400, 58, 1.3], [150, 70, 0.8]];
+    for (let ci = 0; ci < CLOUDS.length; ci++) {
+      const [cx0, cy, sc] = CLOUDS[ci];
+      const cx = ((cx0 + this.t * (3 + ci)) % (W + 90)) - 45;
+      const rows = [[-4, 8], [-3, 16], [-2, 24], [-1, 30], [0, 32], [1, 28], [2, 18]];
+      for (const [ry, rw] of rows) {
+        const wRow = Math.round(rw * sc);
+        g.fillRect(Math.round(cx - wRow / 2), cy + ry, wRow, 1);
+      }
+    }
+    // frigatebirds riding the trades
     g.fillStyle = P.silhouette;
     for (let b = 0; b < 3; b++) {
       const bx = (W + 40 - ((this.t * (6 + b * 2) + b * 150) % (W + 80))) | 0;
@@ -497,7 +568,9 @@ export class Game {
       if (wing) { g.fillRect(bx - 2, by - 1, 2, 1); g.fillRect(bx + 2, by - 1, 2, 1); }
       else { g.fillRect(bx - 2, by, 2, 1); g.fillRect(bx + 2, by, 2, 1); }
     }
+  }
 
+  renderSideView(g) {
     // far water and distant swell lines (the same field, parallaxed)
     // backdrop extends below mean sea level so troughs never expose the void
     g.fillStyle = P.farWater; g.fillRect(0, HORIZON, W, SEA_Y - HORIZON + 60);
@@ -529,15 +602,15 @@ export class Game {
       g.fillStyle = P.waterDeep;
       g.fillRect(x, ySurf + 44 + ((x & 1) << 1), 1, H);
       // streaks racing down the face
-      if (slope > 0.4 && (x * 31 + frame * 3) % 47 < 2) {
+      if (slope > 0.4 && (x * 31 + this._frame * 3) % 47 < 2) {
         g.fillStyle = P.outerWater;
         g.fillRect(x, ySurf + 3, 1, 7);
       }
       // feathered lip highlight on steep faces
       if (Math.abs(slope) > 0.9) { g.fillStyle = P.foam; g.fillRect(x, ySurf, 1, 2); }
       // sun glints on the mellow water
-      if (Math.abs(slope) < 0.3 && ((x * 13 + frame * 5) % 89) < 1 && Math.abs(x - sunX) < 90) {
-        g.fillStyle = P.peach;
+      if (Math.abs(slope) < 0.3 && ((x * 13 + this._frame * 5) % 89) < 1 && Math.abs(x - this._sunX) < 90) {
+        g.fillStyle = P.accent;
         g.fillRect(x, ySurf, 1, 1);
       }
     }
@@ -571,7 +644,7 @@ export class Game {
           g.fillRect(lx, ly, 2, 2);
         }
         // spray off the tip
-        if (!this.rm && (frame & 1) === 0) {
+        if (!this.rm && (this._frame & 1) === 0) {
           g.fillRect(cx + R, cy + Math.round(R * 0.3), 1, 1);
           g.fillRect(cx + R + 2, cy + Math.round(R * 0.55), 1, 1);
         }
@@ -607,19 +680,26 @@ export class Game {
         g.fillRect(bx - 2, by - 4, 5, 4);
         g.fillRect(bx, by - 7, 1, 3);
         if (Math.floor(performance.now() / 1000) % 2 === 0) {
-          g.fillStyle = P.peach; g.fillRect(bx, by - 8, 1, 1);
+          g.fillStyle = P.accent; g.fillRect(bx, by - 8, 1, 1);
         }
       }
     }
 
-    // shoreline silhouette at the far right of the world
+    // golden beach rising at the far right of the world
     {
       const shoreX = this.sx(this.field.L - 14);
       if (shoreX < W + 30) {
-        g.fillStyle = P.silhouette;
         for (let x = Math.max(0, shoreX); x < W; x++) {
-          const rise = Math.min(46, Math.round((x - shoreX) * 0.7));
-          g.fillRect(x, SEA_Y - 4 - rise, 1, H);
+          const rise = Math.min(42, Math.round((x - shoreX) * 0.6));
+          const top = SEA_Y - 4 - rise;
+          g.fillStyle = P.sand;
+          g.fillRect(x, top, 1, H);
+          g.fillStyle = P.palmTrunk;
+          for (let y = top; y < H; y += 3) {
+            if (((x * 11 + y * 17) % 23) < 2) g.fillRect(x, y, 1, 1);
+          }
+          g.fillStyle = P.foam;
+          if ((x + this._frame) % 3 !== 0) g.fillRect(x, top, 1, 1);
         }
       }
     }
@@ -632,17 +712,110 @@ export class Game {
       g.fillRect(this.sx(p.x), this.sy(p.y), 1, 1);
     }
 
-    // barrel vignette
-    if (this.barreled && this.state === "riding") {
-      g.fillStyle = P.silhouette;
-      g.globalAlpha = 0.35;
-      g.fillRect(0, 0, W, 26); g.fillRect(0, H - 26, W, 26);
-      g.globalAlpha = 1;
-      drawTextCentered(g, "BARREL " + this.trace.barrelTime.toFixed(1) + "S", W / 2, 32, P.peach, 1);
-    }
-
-    this.renderHud(g);
   }
+
+  // The ride view: California Games style. The wave stands up across the
+  // screen, curl and whitewater chasing from one side, open shoulder ahead.
+  // Screen x maps to meters down the line; the sim still drives everything.
+  renderWaveWall(g) {
+    const yBase = 236;
+    const Hpx = Math.max(26, Math.min(118, (this.curH ?? 1) * 52));
+    const CURL_X = 92, PXPOS = 10;
+    // water between the horizon and the wave
+    g.fillStyle = P.farWater; g.fillRect(0, HORIZON, W, yBase - HORIZON);
+    g.fillStyle = P.outerWater; g.fillRect(0, HORIZON + 22, W, 16);
+    g.save();
+    if (this.rideLeft) { g.translate(W, 0); g.scale(-1, 1); }
+    const topAt = (x) => {
+      const posAt = (x - CURL_X) / PXPOS;
+      const taper = posAt < 0 ? 1 : 0.3 + 0.7 * Math.exp(-posAt / 16);
+      const ripple = Math.sin(x * 0.045 + this.t * 2.6) * 2 + Math.sin(x * 0.02 - this.t * 1.8) * 2;
+      return Math.round(yBase - Hpx * taper + ripple);
+    };
+    const dither = Math.floor(this.t * 10) % 2;
+    for (let x = 0; x < W; x++) {
+      const posAt = (x - CURL_X) / PXPOS;
+      const topY = topAt(x);
+      const hCol = yBase - topY;
+      if (posAt < -1) {
+        // broken wall behind the curl: churning whitewater
+        g.fillStyle = P.waveFace; g.fillRect(x, topY, 1, hCol);
+        g.fillStyle = P.foam;
+        for (let y = topY - 2; y < yBase; y++) {
+          if ((x + y + dither) % 2 === 0) g.fillRect(x, y, 1, 1);
+        }
+      } else {
+        // open face: turquoise top, deeper water at the base
+        g.fillStyle = P.waveFace; g.fillRect(x, topY, 1, Math.max(1, Math.round(hCol * 0.58)));
+        g.fillStyle = P.outerWater; g.fillRect(x, topY + Math.round(hCol * 0.58), 1, hCol);
+        // feathering lip near the curl and over a warning section down the line
+        const inSection = this.sectionWarned && posAt > this.pos + 4 && posAt < this.pos + 12;
+        if (posAt < 5 || inSection) {
+          g.fillStyle = P.foam;
+          g.fillRect(x, topY - 1, 1, 2 + ((x + Math.floor(this.t * 8)) % 2));
+          if (inSection && (x + dither) % 3 === 0) g.fillRect(x, topY + 4, 1, 3);
+        }
+        // streaks racing down the face
+        if ((x * 31 + Math.floor(this.t * 30)) % 41 < 2) {
+          g.fillStyle = P.outerWater;
+          g.fillRect(x, topY + 3, 1, Math.max(3, Math.round(hCol * 0.3)));
+        }
+      }
+    }
+    // flats in front of the wave
+    g.fillStyle = P.outerWater; g.fillRect(0, yBase, W, H - yBase);
+    g.fillStyle = P.waterDeep; g.fillRect(0, yBase + 16, W, H);
+    g.fillStyle = P.foam;
+    for (let x = 0; x < W; x += 2) {
+      if ((x + Math.floor(this.t * 6)) % 5 < 2) g.fillRect(x, yBase + ((x * 7) % 3), 2, 1);
+    }
+    // the curl: a rolled barrel pitching over at the peak
+    const R = Math.round(Hpx * 0.48);
+    const ph = (Math.floor(this.t * 10) % MOTION.curlFrames) / MOTION.curlFrames;
+    const cy0 = topAt(CURL_X);
+    g.fillStyle = P.waterDeep;
+    for (let dy = 4; dy < R; dy++) {
+      const wl = Math.max(1, Math.round(R * 0.5 * (1 - Math.abs(dy - R * 0.5) / (R * 0.5))));
+      g.fillRect(CURL_X + 3, cy0 + dy + 2, wl, 1);
+    }
+    g.fillStyle = P.foam;
+    for (let a = -0.3; a < Math.PI * (0.6 + ph * 0.4); a += 0.05) {
+      const lx = CURL_X + Math.round(Math.sin(a) * R);
+      const ly = cy0 + Math.round((1 - Math.cos(a)) * R * 0.7);
+      g.fillRect(lx, ly, 3, 3);
+    }
+    if (!this.rm && dither === 0) {
+      g.fillRect(CURL_X + R + 2, cy0 + Math.round(R * 0.4), 2, 2);
+      g.fillRect(CURL_X + R + 5, cy0 + Math.round(R * 0.7), 2, 2);
+    }
+    // the surfer on the face
+    const sxp = Math.round(CURL_X + (this.pos ?? 3) * PXPOS);
+    const topS = topAt(sxp);
+    const syp = Math.round(topS + (this.faceY ?? 0.5) * (yBase - topS - 6)) - 14;
+    let sprite = "ride";
+    if (this.state === "wipeout") sprite = Math.floor(this.wipeT * 8) % 2 ? "wipe1" : "wipe2";
+    else if (this.dropT > 0) sprite = "popup";
+    else if (this.rideT < (this.spriteUntil ?? 0)) sprite = this.spriteState || "ride";
+    else sprite = this.barreled || this.v > 1.5 * this.field.crestSpeed(this.waveX) ? "crouch" : "ride";
+    drawSprite(g, sprite, sxp - 16, syp - 8, SPRITE_COLORS, false, 2);
+    // spray off the board
+    while (this.sprayPending > 0) {
+      this.sprayPending--;
+      if (!this.rm) this.spray.push({
+        x: sxp - 8 + Math.random() * 10, y: syp + 15,
+        vx: -(15 + Math.random() * 55), vy: -(25 + Math.random() * 65),
+        life: 0.35 + Math.random() * 0.35,
+      });
+    }
+    g.fillStyle = P.foam;
+    for (const sp of this.spray) {
+      sp.x += sp.vx / 60; sp.y += sp.vy / 60; sp.vy += 150 / 60; sp.life -= 1 / 60;
+      g.fillRect(Math.round(sp.x), Math.round(sp.y), 2, 2);
+    }
+    this.spray = this.spray.filter((sp) => sp.life > 0 && sp.y < H - 4);
+    g.restore();
+  }
+
 
   renderSurfer(g) {
     const sx = this.sx(this.px);
@@ -662,7 +835,7 @@ export class Game {
       sprite = "sit";
       sy = this.sy(this.eta(this.px)) - 14;
     }
-    drawSprite(g, sprite, sx - 12, sy, SPRITE_COLORS, flip, 2);
+    drawSprite(g, sprite, sx - 16, sy - 6, SPRITE_COLORS, flip, 2);
   }
 
   renderHud(g) {
@@ -674,7 +847,7 @@ export class Game {
     const tele = `${this.st.id} ${this.st.name.toUpperCase()} HS ${this.st.hs.toFixed(1)}M/${mToFt(this.st.hs).toFixed(0)}FT TP ${this.st.tp.toFixed(1)}S ${this.st.peakDir ?? "--"}° OBS ${obsStr} ${ageString(this.st.obsTime)}`;
     drawText(g, tele, 3, 2, P.foam, 1);
     if (this.live && Math.floor(performance.now() / 800) % 2 === 0) {
-      g.fillStyle = P.peach;
+      g.fillStyle = P.accent;
       g.fillRect(W - 6, 4, 3, 3);
     }
 
@@ -686,21 +859,21 @@ export class Game {
       const frac = Math.max(0, Math.min(1, this.v / (2.3 * c)));
       drawText(g, "SPD", 3, H - 10, P.foam, 1);
       g.fillStyle = P.outerWater; g.fillRect(26, H - 8, 50, 4);
-      g.fillStyle = frac > 0.6 ? P.peach : P.waveFace; g.fillRect(26, H - 8, Math.round(50 * frac), 4);
+      g.fillStyle = frac > 0.6 ? P.accent : P.waveFace; g.fillRect(26, H - 8, Math.round(50 * frac), 4);
       drawText(g, `${this.trace.maneuvers.length} MVS ${this.trace.sectionsMade} SEC`, 84, H - 10, P.foam, 1);
     } else if (this.state === "lineup") {
       const inc = this.incomingCrest();
       drawText(g, inc ? `SET ${Math.max(0, Math.round(this.px - inc.x))}M OUT  SPACE TO GO` : "WAIT FOR THE SET  </> TO MOVE", 3, H - 10, P.foam, 1);
     }
-    drawText(g, `BEST ${this.best ? this.best.toFixed(2) : "-.--"}  W${this.rides}`, W - 3 - textWidth(`BEST 00.00  W00`), H - 10, P.peach, 1);
+    drawText(g, `BEST ${this.best ? this.best.toFixed(2) : "-.--"}  W${this.rides}`, W - 3 - textWidth(`BEST 00.00  W00`), H - 10, P.accent, 1);
 
     // catch indicator over the incoming crest
     if (this.state === "lineup" && this.catchable) {
       const cx = this.sx(this.catchable.x);
       const gap = this.px - this.catchable.x;
       if (cx > -10 && cx < W) {
-        drawTextCentered(g, "▼", cx, this.sy(this.catchable.eta) - 14, gap < 22 ? P.peach : P.foam, 1);
-        if (gap < 22) drawTextCentered(g, "PADDLE!", cx, this.sy(this.catchable.eta) - 24, P.peach, 1);
+        drawTextCentered(g, "▼", cx, this.sy(this.catchable.eta) - 14, gap < 22 ? P.accent : P.foam, 1);
+        if (gap < 22) drawTextCentered(g, "PADDLE!", cx, this.sy(this.catchable.eta) - 24, P.accent, 1);
       }
     }
 
@@ -715,9 +888,9 @@ export class Game {
       g.fillStyle = P.silhouette; g.globalAlpha = 0.88;
       g.fillRect(px0, py0, pw, ph);
       g.globalAlpha = 1;
-      g.fillStyle = P.peach; g.fillRect(px0, py0, pw, 1); g.fillRect(px0, py0 + ph - 1, pw, 1);
+      g.fillStyle = P.accent; g.fillRect(px0, py0, pw, 1); g.fillRect(px0, py0 + ph - 1, pw, 1);
       drawTextCentered(g, "JUDGES CALL", W / 2, py0 + 7, P.foam, 1);
-      drawTextCentered(g, this.scorePanel.roll.text(), W / 2, py0 + 20, P.peach, 3);
+      drawTextCentered(g, this.scorePanel.roll.text(), W / 2, py0 + 20, P.accent, 3);
       const lines = wrapText(this.scorePanel.ticker.text(), 46);
       lines.slice(0, 2).forEach((ln, i) => drawTextCentered(g, ln, W / 2, py0 + 50 + i * 10, P.foam, 1));
       if (this.scorePanel.llm) drawText(g, "AI BOOTH", px0 + 4, py0 + ph - 10, P.waveFace, 1);
@@ -726,7 +899,7 @@ export class Game {
       }
       if (this.scorePanel.roll.done() && this.scorePanel.ticker.done()) {
         if (Math.floor(performance.now() / 600) % 2 === 0) {
-          drawTextCentered(g, "SPACE: NEXT WAVE", W / 2, py0 + ph - 12, P.peach, 1);
+          drawTextCentered(g, "SPACE: NEXT WAVE", W / 2, py0 + ph - 12, P.accent, 1);
         }
       }
     }

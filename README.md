@@ -4,15 +4,15 @@
 
 **[Surf it here](https://caromada.github.io/Dawn-Patrol/)**
 
-A retro pixel-art surf game where the ocean is real. Pick a real California break and the waves you paddle into are synthesized from the live directional wave spectrum of the nearest NOAA buoy, reconstructed through wave superposition with real oceanography: the full dispersion relation, energy-flux shoaling, and breaking at 0.78 times the water depth. Flat Tuesday at Lowers means a flat, frustrating game. Overhead Friday means the game is pumping. After every ride a judge scores you 0 to 10 on WSL criteria and the broadcast booth prints a one-line call. Built with plain HTML, CSS and JavaScript: no frameworks, no build step, no image or audio files, and it costs nothing to host.
+A retro pixel-art surf game where the ocean is real. You drop in on the peak and ride down the line, California Games style, with the curl chasing you toward the shoulder. Pick a real California break and the waves you paddle into are synthesized from the live directional wave spectrum of the nearest NOAA buoy, reconstructed through wave superposition with real oceanography: the full dispersion relation, energy-flux shoaling, and breaking at 0.78 times the water depth. Flat Tuesday at Lowers means a flat, frustrating game. Overhead Friday means the game is pumping. After every ride a judge scores you 0 to 10 on WSL criteria and the broadcast booth prints a one-line call. Built with plain HTML, CSS and JavaScript: no frameworks, no build step, no image or audio files, and it costs nothing to host.
 
 ## How to play
 
 1. Pick a break. The cards show the actual conditions at each buoy right now.
 2. **PADDLE OUT**, use **&larr; &rarr;** to move around the lineup, and wait for a set.
-3. When the marker flashes **PADDLE!**, hit **SPACE** to take off. Late is better.
-4. Alternate **&uarr; &darr;** to pump for speed. **X** snaps off the lip, **C** wraps a cutback from the shoulder, **F** floats over a breaking section, and **SPACE** kicks out clean.
-5. Stall in the pocket of a pitching wave for barrel time. Get swallowed by the foam ball and the judges will remember it.
+3. When the marker flashes **PADDLE!**, hit **SPACE** to drop in on the peak. Late is better. Hold an arrow to pick your direction; Blacks peels left on its own.
+4. The wave stands up across the screen, California Games style, curl chasing from behind. Hold **&darr;** to race down the face for speed and **&uarr;** to climb back toward the lip: carving rail to rail is the pump. **X** snaps off the lip, **C** wraps a cutback from the shoulder, **F** floats over a breaking section, **SPACE** kicks out clean.
+5. Stall mid-face in the pocket of a pitching wave for barrel time. Get swallowed by the foam ball and the judges will remember it.
 6. **M** toggles sound, **ESC** returns to the lineup select. Session best is saved per break.
 
 ## The ocean is not decoration

@@ -1,16 +1,21 @@
 // Single source of truth for color and motion tokens (mirrored in style.css).
-// The pre-dawn set, per the design spec. Do not substitute defaults.
+// The pacific-paradise set: midday in Indo/Hawaii, vibrant turquoise and gold.
 
 export const PALETTE = {
-  skyIndigo: "#1A1F3C",   // pre-dawn sky
-  skyDeep: "#12142E",     // zenith, derived from skyIndigo
-  outerWater: "#2E4057",
-  waveFace: "#4F7CAC",
-  foam: "#EAF2E3",
-  peach: "#F2B880",       // first light, horizon band, score highlights
-  silhouette: "#0E0F14",  // surfer, cliff line, buoy
-  waterDeep: "#243349",   // derived shade under the face
-  farWater: "#232C46",    // horizon water band
+  skyDeep: "#1B7FD4",     // zenith blue
+  sky: "#45B8F0",         // tropical midday sky
+  haze: "#A8E6F5",        // pale haze at the horizon
+  farWater: "#0F6E9E",    // horizon water band
+  outerWater: "#178FB5",  // open ocean
+  waveFace: "#35D6C3",    // turquoise wave face
+  waterDeep: "#0A5578",   // under the face
+  foam: "#F5FFFA",        // whitewater, clouds
+  accent: "#FFC845",      // sun gold, score highlights
+  silhouette: "#0E0F14",  // the surfer, birds, rocks. Always silhouette.
+  sand: "#EFCE8C",        // golden beach
+  board: "#FF5A47",       // coral board under the silhouette
+  palmTrunk: "#8A5A33",
+  palmFrond: "#2E9E5B",
 };
 
 export const MOTION = {
