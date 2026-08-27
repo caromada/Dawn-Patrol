@@ -230,8 +230,9 @@ export class Game {
     this.snapCd = 0; this.cutCd = 0; this.floatCd = 0;
     this.spray = [];
     this.sprayPending = 0;
-    // goes left at Blacks, right elsewhere, or steer it with the arrows held at takeoff
-    this.rideLeft = this.keys.left ? true : this.keys.right ? false : this.st.id === "46225";
+    this.wake = [];
+    // point breaks peel right; steer it yourself with an arrow held at takeoff
+    this.rideLeft = this.keys.left ? true : false;
     this.v = this.field.crestSpeed(crest.x);
     this.stallT = 0;
     this.spriteState = "popup";
@@ -374,6 +375,10 @@ export class Game {
     this.pos += (this.v - c) * dt;
     this.px = this.waveX + this.pos;
     this.speedSum += this.v / c; this.speedN++;
+    if ((Math.floor(this.rideT * 60) & 1) === 0) {
+      this.wake.push({ p: this.pos, f: this.faceY });
+      if (this.wake.length > 30) this.wake.shift();
+    }
 
     // barrel: plunging crest with the surfer tucked in the pocket
     const ratio = cr.H / cr.depth;
@@ -568,290 +573,283 @@ export class Game {
     }
   }
 
+  // The lineup, first person: you sit facing the horizon and the synthesized
+  // swells roll in at you. Far lines are the next sets; the closest line is
+  // the one you catch. No beach, no diagrams, just you and the incoming ocean.
   renderSideView(g) {
-    // far water and distant swell lines (the same field, parallaxed)
-    // backdrop extends below mean sea level so troughs never expose the void
-    g.fillStyle = P.farWater; g.fillRect(0, HORIZON, W, SEA_Y - HORIZON + 60);
+    const t = this.t;
+    const OC_TOP = HORIZON;             // renderSky painted down to here
+    const OC_BOT = H - 14;
+    const maxD = 95;                    // how far out you can read the sets
+
+    // open ocean in perspective: deep far, turquoise near
+    const g1 = OC_TOP + 30, g2 = OC_TOP + 88;
+    g.fillStyle = P.farWater; g.fillRect(0, OC_TOP, W, g1 - OC_TOP);
+    g.fillStyle = P.outerWater; g.fillRect(0, g1, W, g2 - g1);
+    g.fillStyle = P.waveFace; g.fillRect(0, g2, W, H - g2);
     g.fillStyle = P.outerWater;
-    for (let i = 0; i < 3; i++) {
-      const depthRow = HORIZON + 6 + i * 9;
-      for (let x = 0; x < W; x += 2) {
-        const wx = (x / PPM + this.cam) * (0.35 + i * 0.1) + i * 60;
-        const e = this.eta(Math.max(0, Math.min(this.field.L - 1, wx)));
-        g.fillRect(x, Math.round(depthRow - e * 3), 2, 1);
-      }
+    for (let y = g1; y < g1 + 5; y++) for (let x = 0; x < W; x++) if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
+    g.fillStyle = P.waveFace;
+    for (let y = g2; y < g2 + 5; y++) for (let x = 0; x < W; x++) if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
+    // drifting chop texture, bigger as it nears
+    const drift2 = Math.floor(t * 10);
+    for (let i = 0; i < 90; i++) {
+      const u = ((i * 53) % 90) / 90;
+      const yy = OC_TOP + 4 + Math.round(Math.pow(u, 1.5) * (OC_BOT - OC_TOP - 8));
+      const xx = ((i * 131 + 9000 - drift2 * (1 + Math.round(u * 3))) % (W + 20)) - 10;
+      g.fillStyle = i % 5 === 0 ? P.foam : P.haze;
+      g.fillRect(xx, yy, u > 0.5 ? 2 : 1, 1);
+    }
+    // the buoy, blinking way out near the horizon
+    {
+      const bx = 96 + Math.round(Math.sin(t * 0.4) * 2);
+      const by = OC_TOP + 7 + Math.round(Math.sin(t * 0.9) * 1);
+      g.fillStyle = P.silhouette;
+      g.fillRect(bx, by, 3, 3); g.fillRect(bx + 1, by - 2, 1, 2);
+      if (Math.floor(t) % 2 === 0) { g.fillStyle = P.accent; g.fillRect(bx + 1, by - 3, 1, 1); }
     }
 
-    // main heightfield surface with 16-bit face shading
-    const yCol = new Int16Array(W);
-    for (let x = 0; x < W; x++) {
-      const wx = this.cam + x / PPM;
-      yCol[x] = wx >= this.field.L ? H : this.sy(this.eta(wx));
-    }
-    for (let x = 0; x < W; x++) {
-      const ySurf = yCol[x];
-      if (ySurf >= H) continue;
-      const slope = (yCol[x] - yCol[Math.max(0, x - 2)]) / 2; // + = front face dropping shoreward
-      g.fillStyle = P.waveFace;
-      g.fillRect(x, ySurf, 1, 14);
-      // dithered seam into the mid water, then the deep shade
-      g.fillStyle = P.outerWater;
-      g.fillRect(x, ySurf + 14 + ((x + ySurf) & 1), 1, H);
-      g.fillStyle = P.waterDeep;
-      g.fillRect(x, ySurf + 44 + ((x & 1) << 1), 1, H);
-      // streaks racing down the face
-      if (slope > 0.4 && (x * 31 + this._frame * 3) % 47 < 2) {
+    // every crest seaward of you is a swell line rolling in
+    const lineY = (d) => OC_TOP + 2 + Math.pow(1 - d / maxD, 1.7) * (OC_BOT - 26 - OC_TOP);
+    const sorted = this.crests.filter((c) => c.x < this.px && this.px - c.x < maxD)
+      .sort((a, b) => (this.px - b.x) - (this.px - a.x));
+    for (const c of sorted) {
+      const d = this.px - c.x;
+      const u = 1 - d / maxD;
+      const yL = Math.round(lineY(d));
+      const amp = Math.max(1, Math.round(c.H * (1.5 + u * 9)));
+      const isTarget = this.catchable && Math.abs(c.x - this.catchable.x) < 2;
+      const tall = Math.round(amp * (u > 0.7 ? 1.5 : 1));
+      for (let x = 0; x < W; x++) {
+        const yy = yL + Math.round(Math.sin(x * 0.025 + c.x * 0.6 + t * 0.6) * (1 + u * 2));
+        // the swell: bright crest, shaded face, dark base so it has body
         g.fillStyle = P.outerWater;
-        g.fillRect(x, ySurf + 3, 1, 7);
-      }
-      // feathered lip highlight on steep faces
-      if (Math.abs(slope) > 0.9) { g.fillStyle = P.foam; g.fillRect(x, ySurf, 1, 2); }
-      // sun glints on the mellow water
-      if (Math.abs(slope) < 0.3 && ((x * 13 + this._frame * 5) % 89) < 1 && Math.abs(x - this._sunX) < 90) {
-        g.fillStyle = P.accent;
-        g.fillRect(x, ySurf, 1, 1);
-      }
-    }
-
-    // breaking crests: the rolled, pitching lip on a 6-frame cycle
-    for (const c of this.crests) {
-      const ratio = c.H / c.depth;
-      if (ratio < 0.62) continue;
-      const cx = this.sx(c.x), cy = this.sy(c.eta);
-      if (cx < -30 || cx > W + 30) continue;
-      const ph = ((this.t * 10 + c.x * 0.7) % MOTION.curlFrames) / MOTION.curlFrames;
-      const R = Math.round(Math.min(16, 4 + c.H * 6));
-      if (!c.breaking) {
-        // feathering: spray blowing back off the lip
-        g.fillStyle = P.foam;
-        const n = 2 + Math.floor(ph * 3);
-        for (let i = 0; i < n; i++) g.fillRect(cx - 2 - i * 2, cy - 1 - (i & 1), 2, 1);
-      } else {
-        // shadowed cavity under the throwing lip
+        g.fillRect(x, yy, 1, tall);
         g.fillStyle = P.waterDeep;
-        for (let dy = 2; dy < Math.round(R * 0.9); dy++) {
-          const wl = Math.max(1, Math.round(R * 0.55 * (1 - Math.abs(dy - R * 0.45) / (R * 0.45))));
-          g.fillRect(cx + 2, cy + dy, wl, 1);
-        }
-        // the lip itself: a foam ring thrown toward the beach
-        g.fillStyle = P.foam;
-        const prog = 0.55 + ph * 0.45;
-        for (let a = -0.2; a < Math.PI * prog; a += 0.08) {
-          const lx = cx + Math.round(Math.sin(a) * R);
-          const ly = cy + Math.round((1 - Math.cos(a)) * R * 0.62);
-          g.fillRect(lx, ly, 2, 2);
-        }
-        // spray off the tip
-        if (!this.rm && (this._frame & 1) === 0) {
-          g.fillRect(cx + R, cy + Math.round(R * 0.3), 1, 1);
-          g.fillRect(cx + R + 2, cy + Math.round(R * 0.55), 1, 1);
-        }
-      }
-    }
-
-    // whitewater bores
-    for (const f of this.fronts) {
-      const fx = this.sx(f.x);
-      if (fx < -20 || fx > W + 20) continue;
-      const e = this.eta(f.x);
-      const top = this.sy(e + f.energy * 0.5);
-      const wpx = Math.round(6 + f.energy * 10);
-      for (let i = -wpx; i < 4; i++) {
-        const x = fx + i;
-        if (x < 0 || x >= W) continue;
-        const hgt = Math.round((1 - Math.abs(i) / (wpx + 2)) * (4 + f.energy * 8));
-        const yTop = top + 2 - hgt + Math.abs(i >> 2);
-        // solid rolling crown over dithered churn
-        g.fillStyle = P.foam;
-        g.fillRect(x, yTop, 1, Math.min(2, hgt));
-        for (let yy = 2; yy < hgt; yy++) {
-          if ((x + yy + (Math.floor(this.t * 8) % 2)) % 2 === 0) g.fillRect(x, yTop + yy, 1, 1);
-        }
-      }
-    }
-
-    // the buoy itself, riding its own data
-    {
-      const bx = this.sx(28), by = this.sy(this.eta(28));
-      if (bx > -6 && bx < W + 6) {
-        g.fillStyle = P.silhouette;
-        g.fillRect(bx - 2, by - 4, 5, 4);
-        g.fillRect(bx, by - 7, 1, 3);
-        if (Math.floor(performance.now() / 1000) % 2 === 0) {
-          g.fillStyle = P.accent; g.fillRect(bx, by - 8, 1, 1);
-        }
-      }
-    }
-
-    // golden beach rising at the far right of the world
-    {
-      const shoreX = this.sx(this.field.L - 14);
-      if (shoreX < W + 30) {
-        for (let x = Math.max(0, shoreX); x < W; x++) {
-          const rise = Math.min(42, Math.round((x - shoreX) * 0.6));
-          const top = SEA_Y - 4 - rise;
-          g.fillStyle = P.sand;
-          g.fillRect(x, top, 1, H);
-          g.fillStyle = P.palmTrunk;
-          for (let y = top; y < H; y += 3) {
-            if (((x * 11 + y * 17) % 23) < 2) g.fillRect(x, y, 1, 1);
-          }
+        g.fillRect(x, yy + tall, 1, Math.max(1, tall >> 1));
+        g.fillStyle = u > 0.4 ? P.haze : P.foam;
+        if ((x + drift2) % (u > 0.5 ? 2 : 4) === 0) g.fillRect(x, yy - 1, 1, 1);
+        if (u > 0.55) { g.fillStyle = P.haze; if (BAYER[yy & 3][x & 3] < 5) g.fillRect(x, yy + 1, 1, 2); }
+        if (c.breaking) {
           g.fillStyle = P.foam;
-          if ((x + this._frame) % 3 !== 0) g.fillRect(x, top, 1, 1);
+          g.fillRect(x, yy - 2, 1, 2 + ((x * 7 + drift2) % 3));
         }
+      }
+      if (isTarget) {
+        const gap = this.px - c.x;
+        const cxm = W / 2;
+        drawTextCentered(g, "▼", cxm, yL - 16, gap < 22 ? P.accent : P.foam, 1);
+        if (gap < 22) drawTextCentered(g, "PADDLE!", cxm, yL - 26, P.accent, 1);
+        else drawTextCentered(g, Math.round(gap) + "M", cxm, yL - 26, P.foam, 1);
       }
     }
 
-    this.renderSurfer(g);
-
-    // particles
-    for (const p of this.particles) {
-      g.fillStyle = p.color;
-      g.fillRect(this.sx(p.x), this.sy(p.y), 1, 1);
+    // whitewater already rolling toward you
+    for (const f of this.fronts) {
+      const d = this.px - f.x;
+      if (d <= 0 || d > maxD) continue;
+      const u = 1 - d / maxD;
+      const yL = Math.round(lineY(d));
+      const th = Math.max(2, Math.round(f.energy * (2 + u * 8)));
+      for (let x = 0; x < W; x += 2) {
+        const yy = yL + Math.round(Math.sin(x * 0.05 + t * 2) * 2);
+        const n = (x * 31 + (yy + Math.floor(t * 8)) * 17) % 23;
+        if (n < 12) { g.fillStyle = P.foam; g.fillRect(x, yy - th, 2, th + 2); }
+        else if (n < 15) { g.fillStyle = P.haze; g.fillRect(x, yy - th, 2, th); }
+      }
     }
 
+    // you, sitting on the board, bobbing on the actual surface
+    const bob = Math.round(this.eta(this.px) * 5);
+    const paddling = this.keys.left || this.keys.right;
+    const lean = paddling ? (this.keys.left ? -2 : 2) : 0;
+    drawSprite(g, "sitback", W / 2 - 27 + lean, H - 62 + bob, null, false, 3);
+    // paddle splash
+    if (paddling && !this.rm) {
+      g.fillStyle = P.foam;
+      for (let i = 0; i < 4; i++) {
+        const sxp2 = W / 2 + (this.keys.left ? -34 : 30) + ((Math.floor(t * 20) + i * 5) % 10);
+        g.fillRect(sxp2, H - 34 + ((i * 7 + Math.floor(t * 14)) % 8), 2, 2);
+      }
+    }
   }
 
-  // The ride view: California Games style. The wave stands up across the
-  // screen, curl and whitewater chasing from one side, open shoulder ahead.
-  // Screen x maps to meters down the line; the sim still drives everything.
+  // The ride view, straight from the California Games playbook: the camera
+  // is ON the wave. The face fills the screen, crest line across the top,
+  // whitewater chasing from the side, and the texture streams past at the
+  // speed you are actually surfing.
   renderWaveWall(g) {
-    const yBase = 236;
-    const Hpx = Math.max(52, Math.min(150, (this.curH ?? 1) * 76));
-    const CURL_X = 92, PXPOS = 10;
     const t = this.t;
-    // water between the horizon and the wave
-    g.fillStyle = P.farWater; g.fillRect(0, HORIZON, W, yBase - HORIZON);
-    g.fillStyle = P.outerWater; g.fillRect(0, HORIZON + 22, W, 16);
+    const Hm = this.curH ?? 1;
+    const crestBase = 96 - Math.round(Math.min(20, Hm * 10)) - Math.round((this.faceY ?? 0.5) * 7);
+    const faceBot = H - 14;
+    const CX0 = 56, PX = 13;
     g.save();
     if (this.rideLeft) { g.translate(W, 0); g.scale(-1, 1); }
-    const breathe = 1 + 0.035 * Math.sin(t * 1.3);
-    const topAt = (x) => {
-      const posAt = (x - CURL_X) / PXPOS;
-      let taper;
-      if (posAt < 0) taper = 1 - Math.min(0.25, -posAt * 0.012); // broken wall slumps slowly
-      else taper = 0.26 + 0.74 * Math.exp(-posAt / 15) + 0.05 * Math.sin(posAt * 0.7 + t * 0.9);
-      const ripple = Math.sin(x * 0.05 + t * 2.2) * 1.6 + Math.sin(x * 0.021 - t * 1.5) * 1.8 + Math.sin(x * 0.11 + t * 3.1) * 0.7;
-      return Math.round(yBase - Hpx * taper * breathe + ripple);
-    };
-    const scroll = Math.floor(t * 46); // face texture races toward the curl
-    const dither = Math.floor(t * 10) % 2;
-    for (let x = 0; x < W; x++) {
-      const posAt = (x - CURL_X) / PXPOS;
-      const topY = topAt(x);
-      const h = yBase - topY;
-      if (h <= 0) continue;
-      if (posAt < -1) {
-        // broken wall: churning whitewater over a teal core
-        g.fillStyle = P.waveFace; g.fillRect(x, topY, 1, h);
-        for (let y = topY - 2; y < yBase; y++) {
-          const n = (x * 31 + y * 17 + scroll * 7) % 23;
-          if (n < 9) { g.fillStyle = P.foam; g.fillRect(x, y, 1, 1); }
-          else if (n < 11) { g.fillStyle = P.haze; g.fillRect(x, y, 1, 1); }
-        }
-        continue;
-      }
-      const dark = posAt < 3; // the wall shadows up near the pocket
-      // vertical bands: glassy sheen under the lip, turquoise face, deep base
-      const b1 = topY + Math.max(1, Math.round(h * 0.05 + Math.max(0, 8 - posAt) * 0.6));
-      const b2 = topY + Math.round(h * 0.42);
-      const b3 = topY + Math.round(h * 0.74);
-      g.fillStyle = P.haze; g.fillRect(x, topY, 1, b1 - topY);
-      g.fillStyle = P.waveFace; g.fillRect(x, b1, 1, b2 - b1);
-      g.fillStyle = dark ? P.waterDeep : P.outerWater; g.fillRect(x, b2, 1, b3 - b2);
-      g.fillStyle = P.waterDeep; g.fillRect(x, b3, 1, yBase - b3);
-      // Bayer blend at each band seam so the gradient reads smooth
-      g.fillStyle = P.haze;
-      for (let y = b1; y < b1 + 3 && y < yBase; y++) {
-        if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
-      }
-      g.fillStyle = P.waveFace;
-      for (let y = b2; y < b2 + 4 && y < yBase; y++) {
-        if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
-      }
-      // moving water texture: streaks sweeping down the face toward the curl
-      if ((x + scroll) % 29 < 2 && posAt > 1) {
-        g.fillStyle = dark ? P.outerWater : P.haze;
-        const sy0 = topY + Math.round(h * 0.2) + ((x * 7) % Math.max(2, Math.round(h * 0.3)));
-        g.fillRect(x, sy0, 1, Math.max(3, Math.round(h * 0.22)));
-      }
-      // feathering foam along the crest, and over a warning section ahead
-      const inSection = this.sectionWarned && posAt > this.pos + 4 && posAt < this.pos + 12;
-      if (posAt < 6 || inSection) {
-        g.fillStyle = P.foam;
-        g.fillRect(x, topY - 1, 1, 2 + ((x + scroll) % 3 === 0 ? 2 : 0));
-        if ((x + dither) % 2 === 0) g.fillRect(x, topY + 2, 1, 1);
-      }
-    }
-    // trough and flats in front of the wave, seam dithered soft
-    g.fillStyle = P.outerWater; g.fillRect(0, yBase, W, H - yBase);
-    g.fillStyle = P.waterDeep; g.fillRect(0, yBase + 16, W, H);
-    g.fillStyle = P.waterDeep;
-    for (let x = 0; x < W; x++) {
-      for (let y = yBase; y < yBase + 3; y++) {
-        if (BAYER[y & 3][x & 3] < 5) g.fillRect(x, y, 1, 1);
-      }
-    }
-    g.fillStyle = P.waveFace;
+
+    // the ocean behind the wave, and its horizon
+    g.fillStyle = P.farWater; g.fillRect(0, 62, W, crestBase + 6 - 62);
+    g.fillStyle = P.haze; g.fillRect(0, 62, W, 1);
+    g.fillStyle = P.foam;
     for (let x = 0; x < W; x += 2) {
-      if ((x * 13 + scroll * 3) % 41 < 3) g.fillRect(x, yBase + 4 + ((x * 7) % 9), 2, 1);
+      if (((x + 9000 - Math.floor(t * 8)) * 17) % 83 < 2) g.fillRect(x, 68 + ((x * 13) % 16), 2, 1);
     }
-    // foam mat spilling ahead of the whitewater at the wave's foot
-    g.fillStyle = P.foam;
-    for (let x = 0; x < CURL_X + 44; x++) {
-      const reach = CURL_X + 44 - x;
-      if ((x * 29 + scroll * 5) % 19 < Math.min(9, reach * 0.25)) {
-        g.fillRect(x, yBase - 1 + ((x + scroll) % 4), 1, 2);
+
+    const crestAt = (x) => Math.round(crestBase + Math.sin(x * 0.045 + t * 1.7) * 2 + Math.sin(x * 0.011 - t * 0.9) * 2);
+
+    // the face: banded gradient columns under a layered crest line
+    for (let x = 0; x < W; x++) {
+      const cy = crestAt(x);
+      const h = faceBot - cy;
+      const b1 = cy + 8;
+      const b2 = cy + Math.round(h * 0.45);
+      g.fillStyle = P.waveFace; g.fillRect(x, cy, 1, b1 - cy);
+      g.fillStyle = P.outerWater; g.fillRect(x, b1, 1, b2 - b1);
+      g.fillStyle = P.waterDeep; g.fillRect(x, b2, 1, faceBot - b2 + 14);
+      g.fillStyle = P.outerWater;
+      for (let y = b1; y < b1 + 4; y++) if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
+      g.fillStyle = P.waterDeep;
+      for (let y = b2; y < b2 + 4; y++) if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
+      // crest: foam edge, broken foam dashes, then a sparkle line
+      g.fillStyle = P.foam;
+      g.fillRect(x, cy - 2, 1, 3 + ((x + Math.floor(t * 12)) % 5 === 0 ? 1 : 0));
+      if ((x + ((x / 7) | 0)) % 7 < 3) g.fillRect(x, cy + 3, 1, 1);
+      g.fillStyle = P.haze;
+      if ((x + Math.floor(t * 20)) % 4 < 2) g.fillRect(x, cy + 7, 1, 1);
+    }
+
+    // face texture, straight off the C64: drifting speckle on the upper
+    // face, rows of little comb ripples lower down, all moving at board speed
+    const vNorm = Math.min(1.8, (this.v ?? 4) / 4.5);
+    const flow = Math.floor(t * (30 + 55 * vNorm));
+    for (let i = 0; i < 80; i++) {
+      const yy = crestBase + 12 + ((i * 37) % Math.round((faceBot - crestBase) * 0.5));
+      const xx = ((i * 131 + 9000 - flow) % (W + 20)) - 10;
+      g.fillStyle = i % 6 === 0 ? P.accent : P.haze;
+      g.fillRect(xx, yy, i % 3 === 0 ? 2 : 1, 1);
+    }
+    for (let row = 0; row < 5; row++) {
+      const baseY = crestBase + Math.round((faceBot - crestBase) * (0.5 + row * 0.115));
+      for (let k3 = 0; k3 < 12; k3++) {
+        const xx = ((k3 * 47 + row * 29 + 9000 - flow) % (W + 40)) - 20;
+        const yy = baseY + ((k3 * 13 + row * 7) % 6);
+        g.fillStyle = P.haze;
+        for (let fin = 0; fin < 3; fin++) {
+          g.fillRect(xx + fin * 4, yy, 1, 2);
+          g.fillRect(xx + fin * 4 + 1, yy + 2, 1, 2);
+        }
+        if (k3 % 4 === 0) { g.fillStyle = P.foam; g.fillRect(xx + 1, yy, 1, 2); }
       }
     }
-    // the curl: a thick pitching lip with a shadowed barrel and falling curtain
-    const R = Math.round(Hpx * 0.55);
-    const ph = (Math.floor(t * 10) % MOTION.curlFrames) / MOTION.curlFrames;
-    const cy0 = topAt(CURL_X + 2);
-    g.fillStyle = P.waterDeep;
-    for (let dy = 3; dy < R; dy++) {
-      const wl = Math.max(1, Math.round(R * 0.6 * (1 - Math.abs(dy - R * 0.5) / (R * 0.55))));
-      g.fillRect(CURL_X + 2, cy0 + dy, wl, 1);
-    }
-    const prog = 0.62 + ph * 0.38;
-    for (let ring = 0; ring < 3; ring++) {
-      const rr = R - ring * 3;
-      g.fillStyle = ring === 0 ? P.foam : ring === 1 ? P.haze : P.waveFace;
-      for (let a = -0.25; a < Math.PI * prog; a += 0.045) {
-        const lx = CURL_X + Math.round(Math.sin(a) * rr);
-        const ly = cy0 + Math.round((1 - Math.cos(a)) * rr * 0.66);
-        g.fillRect(lx, ly, 3, 3);
+
+    // the broken water: sweeps in diagonally from the lip, chunky foam
+    // blocks boiling, reaching further out the closer the curl gets
+    const surferX = Math.round(CX0 + (this.pos ?? 4) * PX);
+    let danger = Math.max(0, 1 - (this.pos ?? 6) / 6);
+    if (this.state === "wipeout") danger = Math.min(1.6, danger + this.wipeT * 1.4);
+    for (let y = crestBase - 6; y < faceBot + 14; y += 2) {
+      const u2 = Math.max(0, (y - crestBase) / (faceBot - crestBase));
+      const diag = (1 - u2) * (30 + danger * 100) + (this.state === "wipeout" ? danger * 120 * u2 : 0);
+      const rag = Math.sin(y * 0.22 + t * 2.6) * 5 + Math.sin(y * 0.06 - t * 1.2) * 8;
+      const wEdge = Math.max(4, Math.round(CX0 - 24 + diag + rag));
+      for (let x = 0; x < wEdge; x += 2) {
+        const n = ((x >> 1) * 31 + ((y >> 1) + Math.floor(t * 7)) * 17) % 29;
+        if (n < 12) g.fillStyle = P.foam;
+        else if (n < 17) g.fillStyle = P.haze;
+        else if (n < 20) g.fillStyle = P.waveFace;
+        else continue;
+        g.fillRect(x, y, 2, 2);
       }
     }
-    // the falling curtain at the mouth of the barrel
-    g.fillStyle = P.foam;
-    const tipX = CURL_X + Math.round(Math.sin(Math.PI * prog) * R);
-    const tipY = cy0 + Math.round((1 - Math.cos(Math.PI * prog)) * R * 0.66);
-    for (let cxx = 0; cxx < 3; cxx++) {
-      const fall = (scroll * 3 + cxx * 5) % Math.max(4, yBase - tipY);
-      g.fillRect(tipX + cxx * 2, tipY + fall, 2, 3);
-    }
-    // spray blowing back off the lip
-    if (!this.rm) {
-      for (let i = 0; i < 4; i++) {
-        g.fillRect(CURL_X + R + 2 + ((scroll * 2 + i * 7) % 14), cy0 + 2 + ((scroll + i * 11) % Math.max(3, R >> 1)), 1, 1);
+
+    // a section throwing foam down the line: get over it or around it
+    if (this.sectionWarned) {
+      const sx0 = Math.round(CX0 + (this.pos + 7) * PX);
+      for (let x = sx0 - 26; x < sx0 + 26; x++) {
+        if (x < 0 || x >= W) continue;
+        const cy = crestAt(x);
+        const reach = 1 - Math.abs(x - sx0) / 26;
+        const depth = Math.round(reach * (26 + 10 * Math.sin(x * 0.31 + t * 4)));
+        g.fillStyle = P.foam;
+        for (let y = cy; y < cy + Math.max(4, depth); y++) {
+          if (((x * 13 + (y + Math.floor(t * 12)) * 7) % 17) < 9) g.fillRect(x, y, 1, 1);
+        }
       }
     }
-    // the surfer on the face
-    const sxp = Math.round(CURL_X + (this.pos ?? 3) * PXPOS);
-    const topS = topAt(sxp);
-    const boardY = Math.round(topS + (this.faceY ?? 0.5) * (yBase - topS - 4));
+
+    // the wake the board carves, fading out behind you
+    if (this.wake && this.wake.length > 1) {
+      for (let i2 = 0; i2 < this.wake.length; i2++) {
+        const wpt = this.wake[i2];
+        const wxp = Math.round(CX0 + wpt.p * PX);
+        if (wxp < 0 || wxp >= W) continue;
+        const cyW = crestAt(wxp);
+        const wyp = Math.round(cyW + 4 + wpt.f * (faceBot - cyW - 6));
+        const fade = i2 / this.wake.length;
+        if ((i2 & 1) === 0 || fade > 0.5) {
+          g.fillStyle = fade > 0.55 ? P.foam : P.haze;
+          g.fillRect(wxp - 2, wyp - 1, 2, 2);
+        }
+      }
+    }
+
+    // the surfer on the face (and above the lip mid-snap)
+    const cyS = crestAt(surferX);
+    const boardY = Math.round(cyS + 4 + (this.faceY ?? 0.5) * (faceBot - cyS - 6));
     let sprite = "ride";
+    let air = 0;
     if (this.state === "wipeout") sprite = Math.floor(this.wipeT * 8) % 2 ? "wipe1" : "wipe2";
     else if (this.dropT > 0) sprite = "popup";
-    else if (this.rideT < (this.spriteUntil ?? 0)) sprite = this.spriteState || "ride";
+    else if (this.rideT < (this.spriteUntil ?? 0)) {
+      sprite = this.spriteState || "ride";
+      if (sprite === "snap" && this.faceY < 0.25) air = 18; // boosting over the lip
+    }
     else sprite = this.barreled || this.v > 1.5 * this.field.crestSpeed(this.waveX) ? "crouch" : "ride";
-    drawSprite(g, sprite, sxp - 24, boardY - 27, null, false, 2);
+
+    // the lip: a canopy over your head. It creeps in from the foam side as
+    // you near the pocket and wraps into a full tube when you are barreled.
+    const pocket = Math.max(0, 1 - (this.pos ?? 8) / 4.5);
+    if (pocket > 0.25 && (this.state === "riding" || this.state === "scored")) {
+      const wrap = Math.min(1, (pocket - 0.25) * 0.9 + (this.barreled ? 0.5 : 0));
+      const bx = surferX + 6;
+      const by2 = boardY + 6;
+      const R2 = Math.round(40 + Hm * 18 + wrap * 12);
+      const aEnd = Math.PI * 1.04; // buried into the foam wall
+      const aStart = Math.PI * (1.04 - 0.85 * wrap);
+      for (let ring = 0; ring < 4; ring++) {
+        g.fillStyle = ring < 2 ? P.foam : ring === 2 ? P.haze : P.waveFace;
+        const rr = R2 + ring * 3;
+        for (let a = aStart; a <= aEnd; a += 0.02) {
+          const lx = bx + Math.round(Math.cos(a) * rr);
+          const ly = by2 - Math.round(Math.sin(a) * rr);
+          if (ly > crestBase - 14) g.fillRect(lx, ly, 3, 3);
+        }
+      }
+      // drips falling off the canopy
+      g.fillStyle = P.foam;
+      for (let i = 0; i < 3; i++) {
+        const a2 = aStart + (aEnd - aStart) * (0.2 + i * 0.3);
+        const lx = bx + Math.round(Math.cos(a2) * R2);
+        const ly = by2 - Math.round(Math.sin(a2) * R2);
+        const fall = (Math.floor(t * 30) + i * 9) % 22;
+        g.fillRect(lx, ly + fall, 2, 3);
+      }
+    }
+
+    // hard white wake right at the tail when you have speed
+    if (this.state === "riding" && (this.v ?? 0) > 0.95 * this.field.crestSpeed(this.waveX)) {
+      g.fillStyle = P.foam;
+      for (let k4 = 0; k4 < 5; k4++) {
+        g.fillRect(surferX - 34 - k4 * 5, boardY + 2 + ((k4 + Math.floor(t * 16)) % 3) - 1, 4, 2);
+      }
+    }
+    drawSprite(g, sprite, surferX - 36, boardY - 40 - air, null, false, 3);
+
     // spray off the board
     while (this.sprayPending > 0) {
       this.sprayPending--;
       if (!this.rm) this.spray.push({
-        x: sxp - 8 + Math.random() * 12, y: boardY - 3,
+        x: surferX - 14 + Math.random() * 20, y: boardY - 2,
         vx: -(15 + Math.random() * 55), vy: -(25 + Math.random() * 65),
         life: 0.35 + Math.random() * 0.35,
       });
@@ -866,26 +864,6 @@ export class Game {
   }
 
 
-  renderSurfer(g) {
-    const sx = this.sx(this.px);
-    let sprite = "sit", flip = false;
-    let sy = this.sy(this.eta(this.px)) - 7;
-    if (this.state === "lineup") {
-      sprite = this.keys.left || this.keys.right ? (Math.floor(this.t * 6) % 2 ? "paddle1" : "paddle2") : "sit";
-      sy = this.sy(this.eta(this.px)) - (sprite === "sit" ? 19 : 8);
-      flip = !!this.keys.left;
-    } else if (this.state === "riding") {
-      sprite = this.spriteState || "ride";
-      sy = this.sy(this.eta(this.px)) - 27;
-    } else if (this.state === "wipeout") {
-      sprite = Math.floor(this.wipeT * 8) % 2 ? "wipe1" : "wipe2";
-      sy = this.sy(this.eta(this.px)) - 14 + Math.round(Math.sin(this.wipeT * 9) * 2);
-    } else if (this.state === "scored") {
-      sprite = "sit";
-      sy = this.sy(this.eta(this.px)) - 17;
-    }
-    drawSprite(g, sprite, sx - 14, sy, null, flip, 2);
-  }
 
   renderHud(g) {
     // telemetry strip: the constant reminder that this ocean is not fake
@@ -912,19 +890,9 @@ export class Game {
       drawText(g, `${this.trace.maneuvers.length} MVS ${this.trace.sectionsMade} SEC`, 84, H - 10, P.foam, 1);
     } else if (this.state === "lineup") {
       const inc = this.incomingCrest();
-      drawText(g, inc ? `SET ${Math.max(0, Math.round(this.px - inc.x))}M OUT  SPACE TO GO` : "WAIT FOR THE SET  </> TO MOVE", 3, H - 10, P.foam, 1);
+      drawText(g, inc ? `SET ${Math.max(0, Math.round(this.px - inc.x))}M OUT  SPACE TO GO` : "READ THE HORIZON  </> TO REPOSITION", 3, H - 10, P.foam, 1);
     }
     drawText(g, `BEST ${this.best ? this.best.toFixed(2) : "-.--"}  W${this.rides}`, W - 3 - textWidth(`BEST 00.00  W00`), H - 10, P.accent, 1);
-
-    // catch indicator over the incoming crest
-    if (this.state === "lineup" && this.catchable) {
-      const cx = this.sx(this.catchable.x);
-      const gap = this.px - this.catchable.x;
-      if (cx > -10 && cx < W) {
-        drawTextCentered(g, "▼", cx, this.sy(this.catchable.eta) - 14, gap < 22 ? P.accent : P.foam, 1);
-        if (gap < 22) drawTextCentered(g, "PADDLE!", cx, this.sy(this.catchable.eta) - 24, P.accent, 1);
-      }
-    }
 
     // flash message
     if (this.msg && performance.now() < this.msg.until) {

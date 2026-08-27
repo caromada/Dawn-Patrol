@@ -8,10 +8,10 @@ A retro pixel-art surf game where the ocean is real. You drop in on the peak and
 
 ## How to play
 
-1. Pick a break. The cards show the actual conditions at each buoy right now.
-2. **PADDLE OUT**, use **&larr; &rarr;** to move around the lineup, and wait for a set.
-3. When the marker flashes **PADDLE!**, hit **SPACE** to drop in on the peak. Late is better. Hold an arrow to pick your direction; Blacks peels left on its own.
-4. The wave stands up across the screen, California Games style, curl chasing from behind. Hold **&darr;** to race down the face for speed and **&uarr;** to climb back toward the lip: carving rail to rail is the pump. **X** snaps off the lip, **C** wraps a cutback from the shoulder, **F** floats over a breaking section, **SPACE** kicks out clean.
+1. Pick a break: Lower Trestles down south, or head north for Steamer Lane, Mavericks, and Ocean Beach. The cards show the actual conditions at each buoy right now.
+2. **PADDLE OUT** and you are sitting in the lineup, first person, watching the synthesized sets roll in at you from the horizon. **&larr; &rarr;** repositions you; the real lulls and sets from the buoy data are something you watch coming.
+3. When your wave stands up in front of you and the marker flashes **PADDLE!**, hit **SPACE** to drop in. Late is better. Hold an arrow at takeoff to go left or right.
+4. The camera cuts onto the wave, straight from the California Games playbook: the face fills the screen, whitewater sweeps in diagonally from the lip behind you, and the closer the curl gets the further the foam reaches overhead. Hold **&darr;** to race down the face for speed and **&uarr;** to climb back toward the lip: carving rail to rail is the pump. **X** snaps off the lip, **C** wraps a cutback from the shoulder, **F** floats over a breaking section, **SPACE** kicks out clean.
 5. Stall mid-face in the pocket of a pitching wave for barrel time. Get swallowed by the foam ball and the judges will remember it.
 6. **M** toggles sound, **ESC** returns to the lineup select. Session best is saved per break.
 
@@ -30,9 +30,9 @@ Every ride logs a trace: takeoff height against the day's significant height, la
 
 ## Everything is drawn and synthesized in code
 
-- The surfer is a set of two-frame character-grid sprites defined right in `js/sprites.js`, always rendered silhouette black so it reads as any surfer.
+- The surfer is a full character drawn as color-legend grids in `js/sprites.js`: blond hair, tan, gold boardshorts, a 7 foot coral pin-tail gun, and an auto-generated 1px contour so he pops off any water. Ten poses from paddle to poised snap to rag-doll wipeout.
 - The score digits, telemetry strip, and every in-game label use a hand-drawn 5x7 bitmap font in `js/hud.js`. No font files, no web fonts.
-- The dawn sky is 4x4 Bayer ordered dithering in the pre-dawn palette: indigo, wave-face blue, foam, first-light peach, silhouette black. The menu beach with its swaying palms is the same palette drawn procedurally every frame.
+- The ride view was rebuilt after studying frame captures of the 1987 original: the face fills the screen under a layered crest line, drifting speckle up high, rows of comb ripples below, all streaming past at your actual board speed. The whitewater sweeps in diagonally in chunky three-tone blocks, your board carves a fading wake, and near the pocket the lip arcs right over your head. The lineup is first person, sets rolling in at you off the horizon. The title beach, its swaying palms, and the marquee logo are drawn procedurally on the same canvas every frame.
 - All audio is Web Audio synthesis: the ocean is filtered looping noise that swells when waves break near you, and every cue from the pop-up blip to the score fanfare is an oscillator envelope.
 - Score digits roll like a mechanical counter, commentary types out at 30 characters per second, and `prefers-reduced-motion` kills the particles and the digit roll while keeping the wave, because the wave is content.
 
@@ -63,6 +63,7 @@ scripts/test-*.mjs       synthesis and judging invariants, run in CI on every re
 - **Making a spectrum feel like a surf spot.** Hs from the reconstruction had to match the buoy's own reported WVHT (it does, within a few percent, checked in CI against the live spectrum), but game feel needed exaggerated vertical scale, a hand-tuned pump-versus-trim speed loop, and a break-depth estimate so the lineup sits where the waves actually stand up.
 - **Free hosting with live data.** NDBC sends no CORS headers, and GitHub Pages has no server, so the data plane became a cron workflow that commits the parsed spectrum and lets Pages redeploy. The game shows the data age in the telemetry strip so the freshness is honest, and falls back to a canned groundswell if the file is missing.
 - **Dithering without moire.** Linear-modulo dithering for the sun glow produced diagonal rays across the sky. Classic 4x4 Bayer ordered dithering is the actual 16-bit technique for a reason.
+- **Copying the masters, literally.** The first three attempts at the ride view (a side cross-section, then a wave wall seen from the beach) looked wrong in ways that were hard to name. Frame-stepping through a capture of the real California Games surfing event gave the answer: the camera belongs ON the wave, the face is the whole screen, and the broken water sweeps in diagonally from the lip. Copying that composition fixed in an afternoon what tweaking could not.
 
 ## Run it locally
 

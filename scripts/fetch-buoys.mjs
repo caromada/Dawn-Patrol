@@ -11,8 +11,9 @@ const BASE = "https://www.ndbc.noaa.gov/data/realtime2";
 
 const STATIONS = [
   { id: "46253", name: "San Pedro South", breakName: "Lower Trestles", shoreNormal: 205 },
-  { id: "46225", name: "Torrey Pines Outer", breakName: "Blacks", shoreNormal: 245 },
-  { id: "46222", name: "San Pedro", breakName: "Huntington", shoreNormal: 200 },
+  { id: "46236", name: "Monterey Canyon", breakName: "Steamer Lane", shoreNormal: 250 },
+  { id: "46026", name: "San Francisco", breakName: "Mavericks", shoreNormal: 285 },
+  { id: "46237", name: "San Francisco Bar", breakName: "Ocean Beach", shoreNormal: 275 },
 ];
 
 // Every fetch: 15s timeout, one retry with backoff. Raw files are saved

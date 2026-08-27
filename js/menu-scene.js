@@ -2,9 +2,12 @@
 // Pure code pixel art on the game canvas while the menu overlay is up.
 
 import { PALETTE as P, reducedMotion } from "./theme.js";
+import { drawTextCentered } from "./hud.js";
 
 const W = 480, H = 270;
 const HORIZON = 108, SAND_Y = 196;
+let status = null; // loading line shown under the logo while data arrives
+export function setMenuStatus(text) { status = text; }
 const BAYER = [
   [0, 8, 2, 10],
   [12, 4, 14, 6],
@@ -140,6 +143,33 @@ function drawScene(g, t) {
     g.fillRect(bx, by, 2, 1);
     if (wing) { g.fillRect(bx - 2, by - 1, 2, 1); g.fillRect(bx + 2, by - 1, 2, 1); }
     else { g.fillRect(bx - 2, by, 2, 1); g.fillRect(bx + 2, by, 2, 1); }
+  }
+
+  // the marquee: big bobbing pixel logo with a hard drop shadow
+  const bob = reducedMotion() ? 0 : Math.round(Math.sin(t * 1.4) * 2);
+  drawTextCentered(g, "DAWN PATROL", W / 2 + 3, 22 + bob + 3, P.silhouette, 4);
+  drawTextCentered(g, "DAWN PATROL", W / 2, 22 + bob, P.accent, 4);
+  drawTextCentered(g, "DAWN PATROL", W / 2 - 1, 21 + bob, P.foam, 4);
+  drawTextCentered(g, "DAWN PATROL", W / 2, 22 + bob, P.accent, 4);
+  drawTextCentered(g, "T H E   O C E A N   I S   R E A L", W / 2, 58 + bob, P.foam, 1);
+
+  // loading strip while the buoy data comes in
+  if (status) {
+    const bw = 220, bx0 = (W - bw) / 2, by0 = 78;
+    drawTextCentered(g, status, W / 2, by0 - 12, P.foam, 1);
+    g.fillStyle = P.silhouette; g.fillRect(bx0 - 1, by0 - 1, bw + 2, 8);
+    g.fillStyle = P.waterDeep; g.fillRect(bx0, by0, bw, 6);
+    // an indeterminate swell rolls through the bar
+    g.fillStyle = P.waveFace;
+    for (let x = 0; x < bw; x++) {
+      const ph2 = ((x - t * 90) % bw + bw) % bw;
+      if (ph2 < 70) g.fillRect(bx0 + x, by0, 1, 6);
+    }
+    g.fillStyle = P.foam;
+    for (let x = 0; x < bw; x += 2) {
+      const ph2 = ((x - t * 90) % bw + bw) % bw;
+      if (ph2 < 70 && ph2 > 62) g.fillRect(bx0 + x, by0, 2, 6);
+    }
   }
 }
 

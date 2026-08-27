@@ -6,7 +6,7 @@ import { Game } from "./game.js";
 import { reducedMotion } from "./theme.js";
 import { booth } from "./judge.js";
 import { initOnGesture, toggleMute, isMuted, sfx } from "./audio.js";
-import { startMenuScene, stopMenuScene } from "./menu-scene.js";
+import { startMenuScene, stopMenuScene, setMenuStatus } from "./menu-scene.js";
 
 const $ = (s) => document.querySelector(s);
 let game = null;
@@ -114,7 +114,13 @@ function wireUi() {
 
 (async function boot() {
   startMenuScene($("#game"));
+  setMenuStatus("READING THE PACIFIC: NOAA BUOY NETWORK");
+  const t0 = performance.now();
   data = await loadBuoys();
+  // let the loading strip breathe even on a fast cache hit
+  const wait = Math.max(0, 900 - (performance.now() - t0));
+  await new Promise((r) => setTimeout(r, wait));
+  setMenuStatus(null);
   buildPicker();
   wireUi();
   if (!data.live) {
