@@ -17,8 +17,6 @@ const PPM = 2.4;                 // pixels per meter, horizontal
 const EPM = 24;                  // pixels per meter, elevation (readability boost)
 const DT = 1 / 60;
 
-const SPRITE_COLORS = { body: P.silhouette, board: P.board };
-
 // 4x4 Bayer matrix for ordered dithering (values 0..15)
 const BAYER = [
   [0, 8, 2, 10],
@@ -719,90 +717,141 @@ export class Game {
   // Screen x maps to meters down the line; the sim still drives everything.
   renderWaveWall(g) {
     const yBase = 236;
-    const Hpx = Math.max(26, Math.min(118, (this.curH ?? 1) * 52));
+    const Hpx = Math.max(52, Math.min(150, (this.curH ?? 1) * 76));
     const CURL_X = 92, PXPOS = 10;
+    const t = this.t;
     // water between the horizon and the wave
     g.fillStyle = P.farWater; g.fillRect(0, HORIZON, W, yBase - HORIZON);
     g.fillStyle = P.outerWater; g.fillRect(0, HORIZON + 22, W, 16);
     g.save();
     if (this.rideLeft) { g.translate(W, 0); g.scale(-1, 1); }
+    const breathe = 1 + 0.035 * Math.sin(t * 1.3);
     const topAt = (x) => {
       const posAt = (x - CURL_X) / PXPOS;
-      const taper = posAt < 0 ? 1 : 0.3 + 0.7 * Math.exp(-posAt / 16);
-      const ripple = Math.sin(x * 0.045 + this.t * 2.6) * 2 + Math.sin(x * 0.02 - this.t * 1.8) * 2;
-      return Math.round(yBase - Hpx * taper + ripple);
+      let taper;
+      if (posAt < 0) taper = 1 - Math.min(0.25, -posAt * 0.012); // broken wall slumps slowly
+      else taper = 0.26 + 0.74 * Math.exp(-posAt / 15) + 0.05 * Math.sin(posAt * 0.7 + t * 0.9);
+      const ripple = Math.sin(x * 0.05 + t * 2.2) * 1.6 + Math.sin(x * 0.021 - t * 1.5) * 1.8 + Math.sin(x * 0.11 + t * 3.1) * 0.7;
+      return Math.round(yBase - Hpx * taper * breathe + ripple);
     };
-    const dither = Math.floor(this.t * 10) % 2;
+    const scroll = Math.floor(t * 46); // face texture races toward the curl
+    const dither = Math.floor(t * 10) % 2;
     for (let x = 0; x < W; x++) {
       const posAt = (x - CURL_X) / PXPOS;
       const topY = topAt(x);
-      const hCol = yBase - topY;
+      const h = yBase - topY;
+      if (h <= 0) continue;
       if (posAt < -1) {
-        // broken wall behind the curl: churning whitewater
-        g.fillStyle = P.waveFace; g.fillRect(x, topY, 1, hCol);
-        g.fillStyle = P.foam;
+        // broken wall: churning whitewater over a teal core
+        g.fillStyle = P.waveFace; g.fillRect(x, topY, 1, h);
         for (let y = topY - 2; y < yBase; y++) {
-          if ((x + y + dither) % 2 === 0) g.fillRect(x, y, 1, 1);
+          const n = (x * 31 + y * 17 + scroll * 7) % 23;
+          if (n < 9) { g.fillStyle = P.foam; g.fillRect(x, y, 1, 1); }
+          else if (n < 11) { g.fillStyle = P.haze; g.fillRect(x, y, 1, 1); }
         }
-      } else {
-        // open face: turquoise top, deeper water at the base
-        g.fillStyle = P.waveFace; g.fillRect(x, topY, 1, Math.max(1, Math.round(hCol * 0.58)));
-        g.fillStyle = P.outerWater; g.fillRect(x, topY + Math.round(hCol * 0.58), 1, hCol);
-        // feathering lip near the curl and over a warning section down the line
-        const inSection = this.sectionWarned && posAt > this.pos + 4 && posAt < this.pos + 12;
-        if (posAt < 5 || inSection) {
-          g.fillStyle = P.foam;
-          g.fillRect(x, topY - 1, 1, 2 + ((x + Math.floor(this.t * 8)) % 2));
-          if (inSection && (x + dither) % 3 === 0) g.fillRect(x, topY + 4, 1, 3);
-        }
-        // streaks racing down the face
-        if ((x * 31 + Math.floor(this.t * 30)) % 41 < 2) {
-          g.fillStyle = P.outerWater;
-          g.fillRect(x, topY + 3, 1, Math.max(3, Math.round(hCol * 0.3)));
-        }
+        continue;
+      }
+      const dark = posAt < 3; // the wall shadows up near the pocket
+      // vertical bands: glassy sheen under the lip, turquoise face, deep base
+      const b1 = topY + Math.max(1, Math.round(h * 0.05 + Math.max(0, 8 - posAt) * 0.6));
+      const b2 = topY + Math.round(h * 0.42);
+      const b3 = topY + Math.round(h * 0.74);
+      g.fillStyle = P.haze; g.fillRect(x, topY, 1, b1 - topY);
+      g.fillStyle = P.waveFace; g.fillRect(x, b1, 1, b2 - b1);
+      g.fillStyle = dark ? P.waterDeep : P.outerWater; g.fillRect(x, b2, 1, b3 - b2);
+      g.fillStyle = P.waterDeep; g.fillRect(x, b3, 1, yBase - b3);
+      // Bayer blend at each band seam so the gradient reads smooth
+      g.fillStyle = P.haze;
+      for (let y = b1; y < b1 + 3 && y < yBase; y++) {
+        if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
+      }
+      g.fillStyle = P.waveFace;
+      for (let y = b2; y < b2 + 4 && y < yBase; y++) {
+        if (BAYER[y & 3][x & 3] < 6) g.fillRect(x, y, 1, 1);
+      }
+      // moving water texture: streaks sweeping down the face toward the curl
+      if ((x + scroll) % 29 < 2 && posAt > 1) {
+        g.fillStyle = dark ? P.outerWater : P.haze;
+        const sy0 = topY + Math.round(h * 0.2) + ((x * 7) % Math.max(2, Math.round(h * 0.3)));
+        g.fillRect(x, sy0, 1, Math.max(3, Math.round(h * 0.22)));
+      }
+      // feathering foam along the crest, and over a warning section ahead
+      const inSection = this.sectionWarned && posAt > this.pos + 4 && posAt < this.pos + 12;
+      if (posAt < 6 || inSection) {
+        g.fillStyle = P.foam;
+        g.fillRect(x, topY - 1, 1, 2 + ((x + scroll) % 3 === 0 ? 2 : 0));
+        if ((x + dither) % 2 === 0) g.fillRect(x, topY + 2, 1, 1);
       }
     }
-    // flats in front of the wave
+    // trough and flats in front of the wave, seam dithered soft
     g.fillStyle = P.outerWater; g.fillRect(0, yBase, W, H - yBase);
     g.fillStyle = P.waterDeep; g.fillRect(0, yBase + 16, W, H);
-    g.fillStyle = P.foam;
-    for (let x = 0; x < W; x += 2) {
-      if ((x + Math.floor(this.t * 6)) % 5 < 2) g.fillRect(x, yBase + ((x * 7) % 3), 2, 1);
-    }
-    // the curl: a rolled barrel pitching over at the peak
-    const R = Math.round(Hpx * 0.48);
-    const ph = (Math.floor(this.t * 10) % MOTION.curlFrames) / MOTION.curlFrames;
-    const cy0 = topAt(CURL_X);
     g.fillStyle = P.waterDeep;
-    for (let dy = 4; dy < R; dy++) {
-      const wl = Math.max(1, Math.round(R * 0.5 * (1 - Math.abs(dy - R * 0.5) / (R * 0.5))));
-      g.fillRect(CURL_X + 3, cy0 + dy + 2, wl, 1);
+    for (let x = 0; x < W; x++) {
+      for (let y = yBase; y < yBase + 3; y++) {
+        if (BAYER[y & 3][x & 3] < 5) g.fillRect(x, y, 1, 1);
+      }
     }
+    g.fillStyle = P.waveFace;
+    for (let x = 0; x < W; x += 2) {
+      if ((x * 13 + scroll * 3) % 41 < 3) g.fillRect(x, yBase + 4 + ((x * 7) % 9), 2, 1);
+    }
+    // foam mat spilling ahead of the whitewater at the wave's foot
     g.fillStyle = P.foam;
-    for (let a = -0.3; a < Math.PI * (0.6 + ph * 0.4); a += 0.05) {
-      const lx = CURL_X + Math.round(Math.sin(a) * R);
-      const ly = cy0 + Math.round((1 - Math.cos(a)) * R * 0.7);
-      g.fillRect(lx, ly, 3, 3);
+    for (let x = 0; x < CURL_X + 44; x++) {
+      const reach = CURL_X + 44 - x;
+      if ((x * 29 + scroll * 5) % 19 < Math.min(9, reach * 0.25)) {
+        g.fillRect(x, yBase - 1 + ((x + scroll) % 4), 1, 2);
+      }
     }
-    if (!this.rm && dither === 0) {
-      g.fillRect(CURL_X + R + 2, cy0 + Math.round(R * 0.4), 2, 2);
-      g.fillRect(CURL_X + R + 5, cy0 + Math.round(R * 0.7), 2, 2);
+    // the curl: a thick pitching lip with a shadowed barrel and falling curtain
+    const R = Math.round(Hpx * 0.55);
+    const ph = (Math.floor(t * 10) % MOTION.curlFrames) / MOTION.curlFrames;
+    const cy0 = topAt(CURL_X + 2);
+    g.fillStyle = P.waterDeep;
+    for (let dy = 3; dy < R; dy++) {
+      const wl = Math.max(1, Math.round(R * 0.6 * (1 - Math.abs(dy - R * 0.5) / (R * 0.55))));
+      g.fillRect(CURL_X + 2, cy0 + dy, wl, 1);
+    }
+    const prog = 0.62 + ph * 0.38;
+    for (let ring = 0; ring < 3; ring++) {
+      const rr = R - ring * 3;
+      g.fillStyle = ring === 0 ? P.foam : ring === 1 ? P.haze : P.waveFace;
+      for (let a = -0.25; a < Math.PI * prog; a += 0.045) {
+        const lx = CURL_X + Math.round(Math.sin(a) * rr);
+        const ly = cy0 + Math.round((1 - Math.cos(a)) * rr * 0.66);
+        g.fillRect(lx, ly, 3, 3);
+      }
+    }
+    // the falling curtain at the mouth of the barrel
+    g.fillStyle = P.foam;
+    const tipX = CURL_X + Math.round(Math.sin(Math.PI * prog) * R);
+    const tipY = cy0 + Math.round((1 - Math.cos(Math.PI * prog)) * R * 0.66);
+    for (let cxx = 0; cxx < 3; cxx++) {
+      const fall = (scroll * 3 + cxx * 5) % Math.max(4, yBase - tipY);
+      g.fillRect(tipX + cxx * 2, tipY + fall, 2, 3);
+    }
+    // spray blowing back off the lip
+    if (!this.rm) {
+      for (let i = 0; i < 4; i++) {
+        g.fillRect(CURL_X + R + 2 + ((scroll * 2 + i * 7) % 14), cy0 + 2 + ((scroll + i * 11) % Math.max(3, R >> 1)), 1, 1);
+      }
     }
     // the surfer on the face
     const sxp = Math.round(CURL_X + (this.pos ?? 3) * PXPOS);
     const topS = topAt(sxp);
-    const syp = Math.round(topS + (this.faceY ?? 0.5) * (yBase - topS - 6)) - 14;
+    const boardY = Math.round(topS + (this.faceY ?? 0.5) * (yBase - topS - 4));
     let sprite = "ride";
     if (this.state === "wipeout") sprite = Math.floor(this.wipeT * 8) % 2 ? "wipe1" : "wipe2";
     else if (this.dropT > 0) sprite = "popup";
     else if (this.rideT < (this.spriteUntil ?? 0)) sprite = this.spriteState || "ride";
     else sprite = this.barreled || this.v > 1.5 * this.field.crestSpeed(this.waveX) ? "crouch" : "ride";
-    drawSprite(g, sprite, sxp - 16, syp - 8, SPRITE_COLORS, false, 2);
+    drawSprite(g, sprite, sxp - 24, boardY - 27, null, false, 2);
     // spray off the board
     while (this.sprayPending > 0) {
       this.sprayPending--;
       if (!this.rm) this.spray.push({
-        x: sxp - 8 + Math.random() * 10, y: syp + 15,
+        x: sxp - 8 + Math.random() * 12, y: boardY - 3,
         vx: -(15 + Math.random() * 55), vy: -(25 + Math.random() * 65),
         life: 0.35 + Math.random() * 0.35,
       });
@@ -823,19 +872,19 @@ export class Game {
     let sy = this.sy(this.eta(this.px)) - 7;
     if (this.state === "lineup") {
       sprite = this.keys.left || this.keys.right ? (Math.floor(this.t * 6) % 2 ? "paddle1" : "paddle2") : "sit";
-      sy = this.sy(this.eta(this.px)) - (sprite === "sit" ? 14 : 8);
+      sy = this.sy(this.eta(this.px)) - (sprite === "sit" ? 19 : 8);
       flip = !!this.keys.left;
     } else if (this.state === "riding") {
       sprite = this.spriteState || "ride";
-      sy = this.sy(this.eta(this.px)) - 16;
+      sy = this.sy(this.eta(this.px)) - 27;
     } else if (this.state === "wipeout") {
       sprite = Math.floor(this.wipeT * 8) % 2 ? "wipe1" : "wipe2";
-      sy = this.sy(this.eta(this.px)) - 12 + Math.round(Math.sin(this.wipeT * 9) * 2);
+      sy = this.sy(this.eta(this.px)) - 14 + Math.round(Math.sin(this.wipeT * 9) * 2);
     } else if (this.state === "scored") {
       sprite = "sit";
-      sy = this.sy(this.eta(this.px)) - 14;
+      sy = this.sy(this.eta(this.px)) - 17;
     }
-    drawSprite(g, sprite, sx - 16, sy - 6, SPRITE_COLORS, flip, 2);
+    drawSprite(g, sprite, sx - 14, sy, null, flip, 2);
   }
 
   renderHud(g) {
