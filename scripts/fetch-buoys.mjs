@@ -85,11 +85,14 @@ async function fetchStation(st) {
   const dirMap = new Map(dir?.pairs ?? []);
   const r1Map = new Map(r1?.pairs ?? []);
 
+  // NDBC uses 999-style sentinels for missing values; treat them as absent.
+  const cleanDir = (v) => (v != null && v >= 0 && v <= 360 ? v : null);
+  const cleanR1 = (v) => (v != null && v >= 0 && v <= 1 ? v : null);
   const bins = energy.pairs.map(([f, S]) => ({
     f,
-    S, // m^2/Hz
-    dir: dirMap.get(f) ?? null, // deg true, direction waves come FROM
-    r1: r1Map.get(f) ?? null, // directional spread parameter 0..1
+    S: S >= 0 && S < 99 ? S : 0, // m^2/Hz
+    dir: cleanDir(dirMap.get(f) ?? null), // deg true, direction waves come FROM
+    r1: cleanR1(r1Map.get(f) ?? null), // directional spread parameter 0..1
   }));
 
   // Integrate m0 for significant wave height, find peak period.

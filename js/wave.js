@@ -12,6 +12,8 @@
 const G = 9.81;
 export const GAMMA = 0.78;
 
+const aligned = (relDeg) => Math.cos((relDeg * Math.PI) / 180);
+
 // Mulberry32: deterministic phases per session seed.
 export function rng(seed) {
   let a = seed >>> 0;
@@ -50,14 +52,14 @@ export function componentsFromBins(bins, shoreNormal, { maxComponents = 28, seed
   const comps = [];
   for (let i = 0; i < bins.length; i++) {
     const b = bins[i];
-    const df = i === 0 ? bins[1].f - bins[0].f : b.f - bins[i - 1].f;
-    if (b.S <= 0) continue;
+    const df = Math.max(0, i === 0 ? bins[1].f - bins[0].f : b.f - bins[i - 1].f);
+    if (!(b.S > 0) || b.S >= 99) continue; // 99+ is an NDBC missing-value sentinel
     let w = 1;
-    if (b.dir != null) {
+    if (b.dir != null && b.dir >= 0 && b.dir <= 360) {
       const rel = ((b.dir - shoreNormal + 540) % 360) - 180; // deg off shore-normal
-      const aligned = Math.cos((rel * Math.PI) / 180);
-      const spread = b.r1 ?? 0.7; // low r1 = wide spread = direction matters less
-      w = Math.max(0, aligned) * spread + (1 - spread) * 0.5;
+      // low r1 = wide spread = direction matters less; clamp out sentinels
+      const spread = Math.min(1, Math.max(0, b.r1 ?? 0.7));
+      w = Math.min(1, Math.max(0, Math.max(0, aligned(rel)) * spread + (1 - spread) * 0.5));
     }
     const a = Math.sqrt(2 * b.S * df) * Math.sqrt(w);
     if (a < 0.008) continue;

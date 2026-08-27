@@ -51,5 +51,22 @@ for (const st of data.stations) {
   check(`${st.id} shoal gain >= 1`, field.gain.every((g) => g[field.n - 1] >= g[0] * 0.95));
 }
 
+// Regression: NDBC 999-style sentinels in dir/r1 must never inflate energy
+// or produce NaN (seen live on 46225, 2026-08-27 00:00Z).
+{
+  const bins = Array.from({ length: 20 }, (_, i) => ({
+    f: 0.05 + i * 0.01, S: 0.8,
+    dir: i % 3 === 0 ? 999 : 200,
+    r1: i % 4 === 0 ? 999 : 0.8,
+  }));
+  const field = new WaveField(componentsFromBins(bins, 205, { seed: 3 }));
+  const hs = field.hsDeep();
+  let m0 = 0;
+  for (let i = 0; i < bins.length; i++) m0 += bins[i].S * 0.01;
+  const hsFull = 4 * Math.sqrt(m0);
+  check("sentinel dir/r1 stay finite", Number.isFinite(hs), String(hs));
+  check("sentinel dir/r1 never inflate Hs", hs <= hsFull * 1.05, `${hs.toFixed(2)} vs ${hsFull.toFixed(2)}`);
+}
+
 console.log(failures ? `\n${failures} failure(s)` : "\nall good");
 process.exit(failures ? 1 : 0);
