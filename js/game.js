@@ -231,6 +231,7 @@ export class Game {
     this.spray = [];
     this.sprayPending = 0;
     this.wake = [];
+    this.man = null; // active maneuver tween
     // point breaks peel right; steer it yourself with an arrow held at takeoff
     this.rideLeft = this.keys.left ? true : false;
     this.v = this.field.crestSpeed(crest.x);
@@ -284,9 +285,8 @@ export class Game {
     if (this.faceY > 0.55) { this.flash("GET UP THE FACE FIRST", P.foam, 1); return; }
     const q = Math.max(0.1, Math.min(1, (this.v / (1.4 * c)) * (1 - this.faceY)));
     this.trace.maneuvers.push({ type: "snap", quality: Math.round(q * 100) / 100 });
-    this.v *= 0.75;
-    this.faceY = Math.min(1, this.faceY + 0.3);
-    this.sprayPending += 16;
+    this.v *= 0.78;
+    this.man = { type: "snap", t0: this.rideT, dur: 0.5, fromPos: this.pos, fromFace: this.faceY };
     this.spriteState = "snap"; this.spriteUntil = this.rideT + 0.4;
     sfx.snap();
     this.burst(this.px, this.eta(this.px) + 0.8, this.rm ? 0 : 14, P.foam);
@@ -300,10 +300,8 @@ export class Game {
     if (this.pos < 4) { this.flash("ALREADY IN THE POCKET", P.foam, 1); return; }
     const q = Math.min(1, this.pos / 14 + this.v / (2.5 * this.field.crestSpeed(this.waveX)));
     this.trace.maneuvers.push({ type: "cutback", quality: Math.round(q * 100) / 100 });
-    this.pos = Math.max(2, this.pos - 8);
-    this.v *= 0.86;
-    this.faceY = Math.min(1, this.faceY + 0.2);
-    this.sprayPending += 10;
+    this.v *= 0.88;
+    this.man = { type: "cutback", t0: this.rideT, dur: 0.75, fromPos: this.pos, toPos: Math.max(2, this.pos - 8), fromFace: this.faceY };
     this.spriteState = "cutback"; this.spriteUntil = this.rideT + 0.5;
     sfx.cutback();
     this.flash("CUTBACK", P.accent, 1);
@@ -318,10 +316,8 @@ export class Game {
     const q = Math.min(1, this.v / (1.4 * this.field.crestSpeed(this.waveX)));
     this.trace.maneuvers.push({ type: "floater", quality: Math.round(q * 100) / 100 });
     this.trace.sectionsMade += 1;
-    this.pos += 5;
-    this.faceY = 0.15;
-    this.sprayPending += 8;
     this.engulfT = 0;
+    this.man = { type: "floater", t0: this.rideT, dur: 0.65, fromPos: this.pos, toPos: this.pos + 5, fromFace: this.faceY };
     this.spriteState = "floater"; this.spriteUntil = this.rideT + 0.6;
     sfx.floater();
     this.flash("FLOATER", P.accent, 1);
@@ -358,6 +354,26 @@ export class Game {
       this.v += (1.5 + this.curRatio) * dt;
     } else {
       this.faceY += (0.55 - this.faceY) * 1.1 * dt;
+    }
+    // an active maneuver owns the board: eased arcs, not teleports
+    if (this.man) {
+      const u = Math.min(1, (this.rideT - this.man.t0) / this.man.dur);
+      const ease = u * u * (3 - 2 * u);
+      if (this.man.type === "cutback") {
+        this.pos = this.man.fromPos + (this.man.toPos - this.man.fromPos) * ease;
+        this.faceY = Math.max(0.02, this.man.fromFace - Math.sin(Math.PI * u) * 0.34);
+        this.sprayPending += 2;
+      } else if (this.man.type === "snap") {
+        const up = Math.sin(Math.PI * Math.min(1, u * 1.3)) * 0.3;
+        this.faceY = Math.max(0, this.man.fromFace - up + (u > 0.55 ? (u - 0.55) * 0.75 : 0));
+        this.pos = this.man.fromPos + Math.sin(Math.PI * u) * 0.7;
+        this.sprayPending += u < 0.5 ? 4 : 1;
+      } else if (this.man.type === "floater") {
+        this.pos = this.man.fromPos + (this.man.toPos - this.man.fromPos) * u;
+        this.faceY = Math.min(this.man.fromFace, 0.1);
+        this.sprayPending += 1;
+      }
+      if (u >= 1) this.man = null;
     }
     // a full rail-to-rail carve is the real pump
     const zone = this.faceY < 0.38 ? -1 : this.faceY > 0.62 ? 1 : 0;
@@ -798,12 +814,16 @@ export class Game {
     const boardY = Math.round(cyS + 4 + (this.faceY ?? 0.5) * (faceBot - cyS - 6));
     let sprite = "ride";
     let air = 0;
+    let flipS = false;
     if (this.state === "wipeout") sprite = Math.floor(this.wipeT * 8) % 2 ? "wipe1" : "wipe2";
     else if (this.dropT > 0) sprite = "popup";
-    else if (this.rideT < (this.spriteUntil ?? 0)) {
-      sprite = this.spriteState || "ride";
-      if (sprite === "snap" && this.faceY < 0.25) air = 18; // boosting over the lip
+    else if (this.man) {
+      const u = Math.min(1, (this.rideT - this.man.t0) / this.man.dur);
+      sprite = this.man.type;
+      if (this.man.type === "cutback") flipS = u > 0.22 && u < 0.78; // facing back through the turn
+      if (this.man.type === "snap" && this.faceY < 0.25) air = 18;   // boosting over the lip
     }
+    else if (this.rideT < (this.spriteUntil ?? 0)) sprite = this.spriteState || "ride";
     else sprite = this.barreled || this.v > 1.5 * this.field.crestSpeed(this.waveX) ? "crouch" : "ride";
 
     // the lip: a canopy over your head. It creeps in from the foam side as
@@ -843,7 +863,7 @@ export class Game {
         g.fillRect(surferX - 34 - k4 * 5, boardY + 2 + ((k4 + Math.floor(t * 16)) % 3) - 1, 4, 2);
       }
     }
-    drawSprite(g, sprite, surferX - 36, boardY - 40 - air, null, false, 3);
+    drawSprite(g, sprite, surferX - 36, boardY - 40 - air, null, flipS, 3);
 
     // spray off the board
     while (this.sprayPending > 0) {

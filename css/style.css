@@ -143,12 +143,21 @@ footer { margin-top: auto; padding-top: 8px; }
 #touch { display: none; }
 @media (pointer: coarse) {
   #screen.playing #touch {
-    display: flex; position: absolute; bottom: 16px; left: 0; right: 0;
-    justify-content: space-between; padding: 0 10px; pointer-events: none;
+    display: block; position: absolute; inset: 0; pointer-events: none;
   }
-  .tside { display: flex; gap: 6px; pointer-events: auto; }
-  #touch button { padding: 10px 12px; font-size: 11px; opacity: 0.85; }
-  #touch .go { background: var(--accent); color: var(--silhouette); }
+  .tside {
+    position: absolute; bottom: 20px;
+    display: grid; grid-template-columns: repeat(2, 46px); gap: 6px;
+    pointer-events: auto;
+  }
+  .tside:first-child { left: 8px; }
+  .tside:last-child { right: 8px; }
+  #touch button {
+    padding: 0; width: 46px; height: 40px;
+    font-size: 10px; letter-spacing: 0; opacity: 0.78;
+    touch-action: none;
+  }
+  #touch .go { background: var(--accent); color: var(--silhouette); font-weight: 700; }
 }
 
 @media (prefers-reduced-motion: reduce) {
