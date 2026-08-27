@@ -11,9 +11,10 @@ A retro pixel-art surf game where the ocean is real. You drop in on the peak and
 1. Pick a break: Lower Trestles down south, or head north for Steamer Lane, Mavericks, and Ocean Beach. The cards show the actual conditions at each buoy right now.
 2. **PADDLE OUT** and you are sitting in the lineup, first person, watching the synthesized sets roll in at you from the horizon. **&larr; &rarr;** repositions you; the real lulls and sets from the buoy data are something you watch coming.
 3. When your wave stands up in front of you and the marker flashes **PADDLE!**, hit **SPACE** to drop in. Late is better. Hold an arrow at takeoff to go left or right.
-4. The camera cuts onto the wave, straight from the California Games playbook: the face fills the screen, whitewater sweeps in diagonally from the lip behind you, and the closer the curl gets the further the foam reaches overhead. Hold **&darr;** to race down the face for speed and **&uarr;** to climb back toward the lip: carving rail to rail is the pump. **X** snaps off the lip, **C** wraps a cutback from the shoulder, **F** floats over a breaking section, **SPACE** kicks out clean.
+4. The camera cuts onto the wave, straight from the California Games playbook: the face fills the screen, whitewater sweeps in diagonally from the lip behind you, and the closer the curl gets the further the foam reaches overhead. Hold **&darr;** to race down the face for speed and **&uarr;** to climb back toward the lip: carving rail to rail is the pump. **X** snaps off the lip, and right at the lip with big speed it launches an air. **C** wraps a cutback from the shoulder, **F** floats over a breaking section, **SPACE** kicks out clean.
 5. Stall mid-face in the pocket of a pitching wave for barrel time. Get swallowed by the foam ball and the judges will remember it.
-6. **M** toggles sound, **ESC** returns to the lineup select. Session best is saved per break.
+6. Scores work like a WSL heat: your best two waves count as the heat total, the panel tells you what the next wave NEEDS, and your best heat is saved per break. The SHARE button sends your total and today's real conditions to whoever needs to know.
+7. **M** toggles sound, **ESC** returns to the lineup select.
 
 ## The ocean is not decoration
 

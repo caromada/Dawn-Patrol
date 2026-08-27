@@ -56,6 +56,8 @@ export class Game {
     this.msg = null;                  // {text, until, color, scale}
     this.rides = 0;
     this.best = Number(localStorage.getItem("dp_best_" + station.id) || 0);
+    this.heatScores = [];              // this session's rides, WSL style: best two count
+    this.bestHeat = Number(localStorage.getItem("dp_heat_" + station.id) || 0);
     this.keys = {};
     this.lastPump = { dir: 0, t: 0 };
     this._bound = { down: (e) => this.onKey(e, true), up: (e) => this.onKey(e, false) };
@@ -138,9 +140,12 @@ export class Game {
     }
     this.particles = this.particles.filter((p) => p.life > 0);
 
-    // breaking noise level near the player
+    // breaking noise near you, plus board hiss that rises with your speed
     let lvl = 0;
     for (const f of this.fronts) lvl = Math.max(lvl, f.energy * Math.exp(-Math.abs(f.x - this.px) / 60));
+    if (this.state === "riding") {
+      lvl = Math.max(lvl, Math.min(1, (this.v / this.field.crestSpeed(this.waveX) - 0.7)));
+    }
     setSurfLevel(lvl);
   }
 
@@ -283,6 +288,16 @@ export class Game {
     const c = this.field.crestSpeed(this.waveX);
     if (this.pos > 14) { this.flash("TOO FAR OUT ON THE SHOULDER", P.foam, 1); return; }
     if (this.faceY > 0.55) { this.flash("GET UP THE FACE FIRST", P.foam, 1); return; }
+    if (this.faceY < 0.18 && this.v > 1.45 * c) {
+      // right at the lip with real speed: launch it
+      const q = Math.max(0.2, Math.min(1, this.v / (1.8 * c)));
+      this.trace.maneuvers.push({ type: "air", quality: Math.round(q * 100) / 100 });
+      this.man = { type: "air", t0: this.rideT, dur: 0.75, fromPos: this.pos, fromFace: this.faceY, q };
+      this.v *= 0.85;
+      sfx.floater();
+      this.flash("AIR!", P.accent, 2);
+      return;
+    }
     const q = Math.max(0.1, Math.min(1, (this.v / (1.4 * c)) * (1 - this.faceY)));
     this.trace.maneuvers.push({ type: "snap", quality: Math.round(q * 100) / 100 });
     this.v *= 0.78;
@@ -372,8 +387,18 @@ export class Game {
         this.pos = this.man.fromPos + (this.man.toPos - this.man.fromPos) * u;
         this.faceY = Math.min(this.man.fromFace, 0.1);
         this.sprayPending += 1;
+      } else if (this.man.type === "air") {
+        this.pos = this.man.fromPos + u * 1.4;
+        this.faceY = Math.max(0, this.man.fromFace - Math.sin(Math.PI * u) * 0.1);
+        this.airLift = Math.sin(Math.PI * u) * (22 + this.man.q * 14);
+        if (u < 0.3) this.sprayPending += 2;
+        if (u >= 1 && this.v < 1.05 * c) {
+          this.man = null; this.airLift = 0;
+          this.startWipeout("did not stick the landing");
+          return;
+        }
       }
-      if (u >= 1) this.man = null;
+      if (u >= 1) { if (this.man.type === "air") this.airLift = 0; this.man = null; }
     }
     // a full rail-to-rail carve is the real pump
     const zone = this.faceY < 0.38 ? -1 : this.faceY > 0.62 ? 1 : 0;
@@ -478,6 +503,14 @@ export class Game {
     if (score > this.best) {
       this.best = score;
       localStorage.setItem("dp_best_" + this.st.id, String(score));
+    }
+    this.heatScores.push(score);
+    const top2 = this.heatScores.slice().sort((a, b) => b - a).slice(0, 2);
+    this.heatTotal = Math.round(top2.reduce((a, b) => a + b, 0) * 100) / 100;
+    this.heatNeeds = top2.length < 2 ? null : Math.round((top2[1] + 0.01) * 100) / 100;
+    if (this.heatTotal > this.bestHeat && this.heatScores.length >= 2) {
+      this.bestHeat = this.heatTotal;
+      localStorage.setItem("dp_heat_" + this.st.id, String(this.heatTotal));
     }
     this.state = "scored";
     this.scoredAt = performance.now();
@@ -819,9 +852,10 @@ export class Game {
     else if (this.dropT > 0) sprite = "popup";
     else if (this.man) {
       const u = Math.min(1, (this.rideT - this.man.t0) / this.man.dur);
-      sprite = this.man.type;
+      sprite = this.man.type === "air" ? "kick" : this.man.type;
       if (this.man.type === "cutback") flipS = u > 0.22 && u < 0.78; // facing back through the turn
       if (this.man.type === "snap" && this.faceY < 0.25) air = 18;   // boosting over the lip
+      if (this.man.type === "air") { air = Math.round(this.airLift ?? 0); flipS = (Math.floor(u * 4) & 1) === 1; }
     }
     else if (this.rideT < (this.spriteUntil ?? 0)) sprite = this.spriteState || "ride";
     else sprite = this.barreled || this.v > 1.5 * this.field.crestSpeed(this.waveX) ? "crouch" : "ride";
@@ -912,7 +946,7 @@ export class Game {
       const inc = this.incomingCrest();
       drawText(g, inc ? `SET ${Math.max(0, Math.round(this.px - inc.x))}M OUT  SPACE TO GO` : "READ THE HORIZON  </> TO REPOSITION", 3, H - 10, P.foam, 1);
     }
-    drawText(g, `BEST ${this.best ? this.best.toFixed(2) : "-.--"}  W${this.rides}`, W - 3 - textWidth(`BEST 00.00  W00`), H - 10, P.accent, 1);
+    drawText(g, `HEAT ${this.heatTotal ? this.heatTotal.toFixed(2) : "-.--"}  BEST ${this.best ? this.best.toFixed(2) : "-.--"}`, W - 3 - textWidth("HEAT 00.00  BEST 00.00"), H - 10, P.accent, 1);
 
     // flash message
     if (this.msg && performance.now() < this.msg.until) {
@@ -931,6 +965,12 @@ export class Game {
       const lines = wrapText(this.scorePanel.ticker.text(), 46);
       lines.slice(0, 2).forEach((ln, i) => drawTextCentered(g, ln, W / 2, py0 + 50 + i * 10, P.foam, 1));
       if (this.scorePanel.llm) drawText(g, "AI BOOTH", px0 + 4, py0 + ph - 10, P.waveFace, 1);
+      if (this.heatTotal) {
+        drawText(g, `HEAT ${this.heatTotal.toFixed(2)}`, px0 + 4, py0 + 7, P.accent, 1);
+        if (this.heatNeeds) {
+          drawText(g, `NEEDS ${this.heatNeeds.toFixed(2)}`, px0 + pw - 4 - textWidth("NEEDS 00.00"), py0 + 7, P.waveFace, 1);
+        }
+      }
       if (this.scorePanel.coach && this.scorePanel.ticker.done()) {
         drawTextCentered(g, "COACH: " + this.scorePanel.coach.toUpperCase().slice(0, 60), W / 2, py0 + ph + 6, P.waveFace, 1);
       }

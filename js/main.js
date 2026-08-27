@@ -32,15 +32,17 @@ function buildPicker() {
       `<div class="stat">BUOY ${st.id} · ${st.name.toUpperCase()}</div>` +
       `<div class="big">${mToFt(st.hs).toFixed(1)}FT @ ${st.tp.toFixed(0)}S ${dirArrow(st.peakDir)}</div>` +
       `<div class="stat">${faceScale(st.hs)} · ${ageString(st.obsTime)}</div>` +
-      (st.met?.wtmp != null ? `<div class="stat">WATER ${st.met.wtmp.toFixed(0)}°C</div>` : "");
+      (st.met?.wtmp != null ? `<div class="stat">WATER ${st.met.wtmp.toFixed(0)}°C</div>` : "") +
+      (Number(localStorage.getItem("dp_heat_" + st.id)) ? `<div class="bname">BEST HEAT ${Number(localStorage.getItem("dp_heat_" + st.id)).toFixed(2)}</div>` : "");
     b.addEventListener("click", () => {
       picked = st;
+      localStorage.setItem("dp_lastbreak", st.id);
       wrap.querySelectorAll(".break-card").forEach((el) => el.setAttribute("aria-checked", "false"));
       b.setAttribute("aria-checked", "true");
       $("#paddleOut").disabled = false;
     });
     wrap.appendChild(b);
-    if (data.stations.length === 1 && i === 0) b.click();
+    if (st.id === localStorage.getItem("dp_lastbreak") || (data.stations.length === 1 && i === 0)) b.click();
   });
 }
 
@@ -74,6 +76,21 @@ function backToMenu() {
 function wireUi() {
   $("#paddleOut").addEventListener("click", startGame);
   $("#backBtn").addEventListener("click", backToMenu);
+
+  $("#shareBtn").addEventListener("click", async () => {
+    if (!game) return;
+    const st = game.st;
+    const ft = mToFt(st.hs).toFixed(0);
+    const scoreBit = game.heatTotal
+      ? `heat total ${game.heatTotal.toFixed(2)}`
+      : game.best ? `best wave ${game.best.toFixed(2)}` : "paddling out";
+    const text = `DAWN PATROL: ${scoreBit} at ${st.breakName} on a real ${ft}ft swell (live buoy ${st.id}). The ocean in this game is the actual Pacific right now.`;
+    const url = "https://caromada.github.io/Dawn-Patrol/";
+    try {
+      if (navigator.share) await navigator.share({ text, url });
+      else { await navigator.clipboard.writeText(text + " " + url); game.flash("COPIED TO CLIPBOARD", "#F5FFFA", 1); }
+    } catch { /* user closed the share sheet: fine */ }
+  });
 
   const muteBtn = $("#mute");
   const paintMute = () => {

@@ -21,7 +21,7 @@ export function scoreRide(trace) {
   s += Math.min(2.2, (takeoffH / Math.max(0.3, dayHs)) * 1.5) + takeoffQuality * 0.6;
 
   // Major maneuvers with diminishing returns per repeated type.
-  const per = { snap: 1.5, cutback: 0.9, floater: 1.1 };
+  const per = { snap: 1.5, cutback: 0.9, floater: 1.1, air: 1.9 };
   const counts = {};
   let manPts = 0;
   for (const m of maneuvers) {
@@ -80,6 +80,7 @@ const LINES = {
 };
 
 const MOVE_TAGS = {
+  air: "that punt above the lip",
   snap: "that hack off the lip",
   cutback: "the wrap back to the source",
   floater: "the glide over the section",

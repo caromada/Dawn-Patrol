@@ -129,7 +129,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .dim a { color: var(--haze); }
 footer { margin-top: auto; padding-top: 8px; }
 
-#mute, #backBtn {
+#mute, #backBtn, #shareBtn {
   position: absolute; top: 6px; z-index: 5;
   padding: 3px 7px; font-size: 9px; border-width: 1px;
   background: rgba(14, 15, 20, 0.7);
@@ -137,7 +137,8 @@ footer { margin-top: auto; padding-top: 8px; }
 }
 #mute { right: 6px; }
 #backBtn { right: 52px; }
-#screen.playing #mute, #screen.playing #backBtn { display: block; }
+#shareBtn { right: 110px; border-color: var(--accent); color: var(--accent); }
+#screen.playing #mute, #screen.playing #backBtn, #screen.playing #shareBtn { display: block; }
 #mute.off { color: var(--outer-water); }
 
 #touch { display: none; }
