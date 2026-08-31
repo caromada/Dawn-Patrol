@@ -1,5 +1,13 @@
 #YY  MM DD hh mm WDIR WSPD GST  WVHT   DPD   APD MWD   PRES  ATMP  WTMP  DEWP  VIS PTDY  TIDE
 #yr  mo dy hr mn degT m/s  m/s     m   sec   sec degT   hPa  degC  degC  degC  nmi  hPa    ft
+2026 08 31 22 30  MM   MM   MM   1.1    14   6.2 218     MM  15.7  14.8    MM   MM   MM    MM
+2026 08 31 22 00  MM   MM   MM   1.0     8   6.1 298     MM  15.8  14.9    MM   MM   MM    MM
+2026 08 31 21 30  MM   MM   MM   1.1    14   6.2 227     MM  15.7  14.8    MM   MM   MM    MM
+2026 08 31 21 00  MM   MM   MM   1.1    14   6.4 219     MM  15.5  14.7    MM   MM   MM    MM
+2026 08 31 20 30  MM   MM   MM   1.1    14   6.1 223     MM  15.7  14.5    MM   MM   MM    MM
+2026 08 31 20 00  MM   MM   MM   1.0     7   6.0 288     MM  15.6  14.4    MM   MM   MM    MM
+2026 08 31 19 30  MM   MM   MM   1.1     8   5.9 301     MM  15.5  14.3    MM   MM   MM    MM
+2026 08 31 19 00  MM   MM   MM   1.1     7   5.9 292     MM  15.1  14.3    MM   MM   MM    MM
 2026 08 31 18 30  MM   MM   MM   1.1    14   6.1 226     MM  15.0  14.2    MM   MM   MM    MM
 2026 08 31 18 00  MM   MM   MM   1.2     7   6.3 299     MM  14.7  14.1    MM   MM   MM    MM
 2026 08 31 17 30  MM   MM   MM   1.2     8   6.2 305     MM  14.6  13.9    MM   MM   MM    MM
