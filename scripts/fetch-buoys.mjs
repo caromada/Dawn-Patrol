@@ -2,19 +2,38 @@
 // Fetch NDBC realtime spectral files for our stations and emit data/buoys.json.
 // No dependencies; run with `node scripts/fetch-buoys.mjs`.
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = "https://www.ndbc.noaa.gov/data/realtime2";
 
-const STATIONS = [
-  { id: "46253", name: "San Pedro South", breakName: "Lower Trestles", shoreNormal: 205 },
-  { id: "46236", name: "Monterey Canyon", breakName: "Steamer Lane", shoreNormal: 250 },
-  { id: "46026", name: "San Francisco", breakName: "Mavericks", shoreNormal: 285 },
-  { id: "46237", name: "San Francisco Bar", breakName: "Ocean Beach", shoreNormal: 275 },
+// Each break tries its nearest spectral buoy first, then backups. NOAA buoys
+// go offline for weeks at a time, so a single station per break is fragile.
+const BREAKS = [
+  { breakName: "Lower Trestles", shoreNormal: 205, stations: [
+    { id: "46253", name: "San Pedro South" },
+    { id: "46222", name: "San Pedro" },
+  ] },
+  { breakName: "Steamer Lane", shoreNormal: 250, stations: [
+    { id: "46236", name: "Monterey Canyon" },
+    { id: "46042", name: "Monterey Bay" },
+  ] },
+  { breakName: "Mavericks", shoreNormal: 285, stations: [
+    { id: "46026", name: "San Francisco" },
+    { id: "46214", name: "Point Reyes" },
+  ] },
+  { breakName: "Ocean Beach", shoreNormal: 275, stations: [
+    { id: "46237", name: "San Francisco Bar" },
+    { id: "46214", name: "Point Reyes" },
+    { id: "46013", name: "Bodega Bay" },
+  ] },
 ];
+
+// Raw files hold ~45 days of history (about 1 MB each). Keep only the newest
+// rows so every run stays reprocessable without bloating the repo.
+const RAW_KEEP_ROWS = 48;
 
 // Every fetch: 15s timeout, one retry with backoff. Raw files are saved
 // as fetched (data/raw/) before any parsing, so runs are reprocessable.
@@ -25,8 +44,11 @@ async function text(url) {
       if (!res.ok) throw new Error(`${res.status}`);
       const body = await res.text();
       const name = url.split("/").pop();
+      const lines = body.split("\n");
+      const header = lines.filter((l) => l.startsWith("#"));
+      const rows = lines.filter((l) => l && !l.startsWith("#")).slice(0, RAW_KEEP_ROWS);
       mkdirSync(join(ROOT, "data", "raw"), { recursive: true });
-      writeFileSync(join(ROOT, "data", "raw", name), body);
+      writeFileSync(join(ROOT, "data", "raw", name), [...header, ...rows].join("\n") + "\n");
       return body;
     } catch (e) {
       if (attempt === 1) throw new Error(`${e.message} ${url}`);
@@ -72,7 +94,7 @@ function num(v) {
   return Number.isFinite(n) && n < 99 ? n : null; // NDBC uses 99/999 for missing
 }
 
-async function fetchStation(st) {
+async function fetchStation(st, brk) {
   const [spec, swdir, swr1, met] = await Promise.all([
     text(`${BASE}/${st.id}.data_spec`),
     text(`${BASE}/${st.id}.swdir`).catch(() => null),
@@ -109,12 +131,12 @@ async function fetchStation(st) {
   return {
     id: st.id,
     name: st.name,
-    breakName: st.breakName,
-    shoreNormal: st.shoreNormal,
+    breakName: brk.breakName,
+    shoreNormal: brk.shoreNormal,
     obsTime: energy.time,
     hs: Math.round(hs * 100) / 100,
     tp: Math.round((1 / peak.f) * 10) / 10,
-    peakDir: dirMap.get(peak.f) ?? null,
+    peakDir: cleanDir(dirMap.get(peak.f) ?? null),
     met: m
       ? { wvht: num(m.WVHT), dpd: num(m.DPD), mwd: num(m.MWD), wspd: num(m.WSPD), wdir: num(m.WDIR), wtmp: num(m.WTMP) }
       : null,
@@ -122,19 +144,47 @@ async function fetchStation(st) {
   };
 }
 
+// Last good data, so a break whose buoys are all down keeps its previous
+// reading (the game shows its age) instead of disappearing from the menu.
+const OUT_PATH = join(ROOT, "data", "buoys.json");
+let previous = [];
+try {
+  if (existsSync(OUT_PATH)) previous = JSON.parse(readFileSync(OUT_PATH, "utf8")).stations ?? [];
+} catch { /* unreadable previous file: start fresh */ }
+
+// data/raw mirrors this run only; older snapshots live in git history.
+rmSync(join(ROOT, "data", "raw"), { recursive: true, force: true });
+
 const out = { fetchedAt: Date.now(), source: "NDBC realtime2", stations: [] };
-for (const st of STATIONS) {
-  try {
-    out.stations.push(await fetchStation(st));
-    console.log(`ok ${st.id} (${st.breakName})`);
-  } catch (e) {
-    console.error(`FAIL ${st.id}: ${e.message}`);
+let fresh = 0;
+for (const brk of BREAKS) {
+  let got = null;
+  for (const st of brk.stations) {
+    try {
+      got = await fetchStation(st, brk);
+      console.log(`ok ${st.id} (${brk.breakName})`);
+      break;
+    } catch (e) {
+      console.warn(`skip ${st.id} for ${brk.breakName}: ${e.message}`);
+    }
+  }
+  if (got) {
+    out.stations.push(got);
+    fresh++;
+    continue;
+  }
+  const stale = previous.find((p) => p.breakName === brk.breakName);
+  if (stale) {
+    out.stations.push(stale);
+    console.warn(`kept last good reading for ${brk.breakName} (buoys unreachable)`);
+  } else {
+    console.error(`no data for ${brk.breakName}, and no previous reading to keep`);
   }
 }
-if (!out.stations.length) {
+if (!fresh) {
   console.error("no stations fetched; keeping previous data file");
   process.exit(1);
 }
 mkdirSync(join(ROOT, "data"), { recursive: true });
-writeFileSync(join(ROOT, "data", "buoys.json"), JSON.stringify(out));
-console.log(`wrote data/buoys.json (${out.stations.length} stations)`);
+writeFileSync(OUT_PATH, JSON.stringify(out));
+console.log(`wrote data/buoys.json (${out.stations.length} breaks, ${fresh} fresh)`);
