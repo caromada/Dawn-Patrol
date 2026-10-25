@@ -1,5 +1,14 @@
 #YY  MM DD hh mm WDIR WSPD GST  WVHT   DPD   APD MWD   PRES  ATMP  WTMP  DEWP  VIS PTDY  TIDE
 #yr  mo dy hr mn degT m/s  m/s     m   sec   sec degT   hPa  degC  degC  degC  nmi  hPa    ft
+2026 10 25 04 30  MM   MM   MM   1.6    10   6.7 301     MM  17.4  18.1    MM   MM   MM    MM
+2026 10 25 04 00  MM   MM   MM   1.6    10   6.6 298     MM  17.4  18.2    MM   MM   MM    MM
+2026 10 25 03 30  MM   MM   MM   1.6    10   6.7 303     MM  17.7  18.2    MM   MM   MM    MM
+2026 10 25 03 00  MM   MM   MM   1.6     9   6.4 300     MM  17.7  18.2    MM   MM   MM    MM
+2026 10 25 02 30  MM   MM   MM   1.5    11   6.2 297     MM  17.8  18.2    MM   MM   MM    MM
+2026 10 25 02 00  MM   MM   MM   1.5    10   6.6 303     MM  17.8  18.3    MM   MM   MM    MM
+2026 10 25 01 30  MM   MM   MM   1.4    10   6.8 301     MM  18.0  18.3    MM   MM   MM    MM
+2026 10 25 01 00  MM   MM   MM   1.4    10   7.2 303     MM  18.8  18.5    MM   MM   MM    MM
+2026 10 25 00 30  MM   MM   MM   1.6    10   7.3 304     MM  19.1  18.7    MM   MM   MM    MM
 2026 10 25 00 00  MM   MM   MM   1.5    10   7.3 297     MM  19.0  18.6    MM   MM   MM    MM
 2026 10 24 23 30  MM   MM   MM   1.6    10   7.8 303     MM  18.9  18.9    MM   MM   MM    MM
 2026 10 24 23 00  MM   MM   MM   1.6    10   7.6 303     MM  18.9  18.8    MM   MM   MM    MM
@@ -39,12 +48,3 @@
 2026 10 24 06 00  MM   MM   MM   2.0    11   7.2 301     MM  17.8  18.3    MM   MM   MM    MM
 2026 10 24 05 30  MM   MM   MM   2.0    11   7.0 303     MM  17.8  18.3    MM   MM   MM    MM
 2026 10 24 05 00  MM   MM   MM   2.0    11   6.8 301     MM  17.7  18.3    MM   MM   MM    MM
-2026 10 24 04 30  MM   MM   MM   2.0    11   6.8 302     MM  17.6  18.3    MM   MM   MM    MM
-2026 10 24 04 00  MM   MM   MM   2.0    11   6.8 301     MM  17.6  18.3    MM   MM   MM    MM
-2026 10 24 03 30  MM   MM   MM   2.2    11   6.9 304     MM  17.6  18.3    MM   MM   MM    MM
-2026 10 24 03 00  MM   MM   MM   1.9    11   6.3 298     MM  17.6  18.3    MM   MM   MM    MM
-2026 10 24 02 30  MM   MM   MM   2.1    11   6.9 301     MM  17.9  18.3    MM   MM   MM    MM
-2026 10 24 02 00  MM   MM   MM   2.0    11   6.6 301     MM  18.1  18.3    MM   MM   MM    MM
-2026 10 24 01 30  MM   MM   MM   2.2    11   6.8 304     MM  18.2  18.3    MM   MM   MM    MM
-2026 10 24 01 00  MM   MM   MM   2.0    11   6.4 301     MM  18.0  18.3    MM   MM   MM    MM
-2026 10 24 00 30  MM   MM   MM   2.2    11   6.7 302     MM  18.2  18.4    MM   MM   MM    MM
